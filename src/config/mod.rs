@@ -154,6 +154,9 @@ pub struct ProxyConfig {
 
     #[serde(default)]
     pub listeners: Vec<ListenerConfig>,
+
+    #[serde(default)]
+    pub show_link: Vec<String>,
 }
 
 fn default_port() -> u16 { 443 }
@@ -208,6 +211,7 @@ impl Default for ProxyConfig {
             fake_cert_len: default_fake_cert_len(),
             upstreams: Vec::new(),
             listeners: Vec::new(),
+            show_link: Vec::new(),
         }
     }
 }

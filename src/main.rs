@@ -99,9 +99,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     listener_conf.ip
                 };
 
-                for (user, secret) in &config.users {
-                    info!("Link for {}: tg://proxy?server={}&port={}&secret={}", 
-                        user, public_ip, config.port, secret);
+                // Show links for configured users
+                if !config.show_link.is_empty() {
+                    info!("--- Proxy Links for {} ---", public_ip);
+                    for user_name in &config.show_link {
+                        if let Some(secret) = config.users.get(user_name) {
+                            info!("User: {}", user_name);
+
+                            // Classic
+                            if config.modes.classic {
+                                info!("  Classic: tg://proxy?server={}&port={}&secret={}", 
+                                    public_ip, config.port, secret);
+                            }
+
+                            // DD (Secure)
+                            if config.modes.secure {
+                                info!("  DD:      tg://proxy?server={}&port={}&secret=dd{}", 
+                                    public_ip, config.port, secret);
+                            }
+
+                            // EE-TLS (FakeTLS)
+                            if config.modes.tls {
+                                let domain_hex = hex::encode(&config.tls_domain);
+                                info!("  EE-TLS:  tg://proxy?server={}&port={}&secret=ee{}{}", 
+                                    public_ip, config.port, secret, domain_hex);
+                            }
+                        } else {
+                            warn!("User '{}' specified in show_link not found in users list", user_name);
+                        }
+                    }
+                    info!("-----------------------------------");
                 }
                 
                 listeners.push(listener);

@@ -149,9 +149,9 @@ pub trait FrameCodec: Send + Sync {
 /// Create a frame codec for the given protocol tag
 pub fn create_codec(proto_tag: ProtoTag) -> Box<dyn FrameCodec> {
     match proto_tag {
-        ProtoTag::Abridged => Box::new(super::frame_codec::AbridgedCodec::new()),
-        ProtoTag::Intermediate => Box::new(super::frame_codec::IntermediateCodec::new()),
-        ProtoTag::Secure => Box::new(super::frame_codec::SecureCodec::new()),
+        ProtoTag::Abridged => Box::new(crate::stream::frame_codec::AbridgedCodec::new()),
+        ProtoTag::Intermediate => Box::new(crate::stream::frame_codec::IntermediateCodec::new()),
+        ProtoTag::Secure => Box::new(crate::stream::frame_codec::SecureCodec::new()),
     }
 }
 
