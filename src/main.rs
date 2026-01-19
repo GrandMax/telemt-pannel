@@ -23,6 +23,7 @@ use crate::proxy::ClientHandler;
 use crate::stats::{Stats, ReplayChecker};
 use crate::transport::{create_listener, ListenOptions, UpstreamManager};
 use crate::util::ip::detect_ip;
+use crate::stream::BufferPool;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -52,14 +53,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     config.validate()?;
     
+    // Log loaded configuration for debugging
+    info!("=== Configuration Loaded ===");
+    info!("TLS Domain: {}", config.censorship.tls_domain);
+    info!("Mask enabled: {}", config.censorship.mask);
+    info!("Mask host: {}", config.censorship.mask_host.as_deref().unwrap_or(&config.censorship.tls_domain));
+    info!("Mask port: {}", config.censorship.mask_port);
+    info!("Modes: classic={}, secure={}, tls={}", 
+        config.general.modes.classic, 
+        config.general.modes.secure, 
+        config.general.modes.tls
+    );
+    info!("============================");
+    
     let config = Arc::new(config);
     let stats = Arc::new(Stats::new());
     
-    // CHANGED: Initialize global ReplayChecker here instead of per-connection
-    let replay_checker = Arc::new(ReplayChecker::new(config.replay_check_len));
+    // Initialize global ReplayChecker
+    // Using sharded implementation for better concurrency
+    let replay_checker = Arc::new(ReplayChecker::new(config.access.replay_check_len));
     
     // Initialize Upstream Manager
     let upstream_manager = Arc::new(UpstreamManager::new(config.upstreams.clone()));
+    
+    // Initialize Buffer Pool
+    // 16KB buffers, max 4096 buffers (~64MB total cached)
+    let buffer_pool = Arc::new(BufferPool::with_config(16 * 1024, 4096));
     
     // Start Health Checks
     let um_clone = upstream_manager.clone();
@@ -73,8 +92,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start Listeners
     let mut listeners = Vec::new();
     
-    for listener_conf in &config.listeners {
-        let addr = SocketAddr::new(listener_conf.ip, config.port);
+    for listener_conf in &config.server.listeners {
+        let addr = SocketAddr::new(listener_conf.ip, config.server.port);
         let options = ListenOptions {
             ipv6_only: listener_conf.ip.is_ipv6(),
             ..Default::default()
@@ -86,13 +105,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 info!("Listening on {}", addr);
                 
                 // Determine public IP for tg:// links
-                // 1. Use explicit announce_ip if set
-                // 2. If listening on 0.0.0.0 or ::, use detected public IP
-                // 3. Otherwise use the bind IP
                 let public_ip = if let Some(ip) = listener_conf.announce_ip {
                     ip
                 } else if listener_conf.ip.is_unspecified() {
-                    // Try to use detected IP of the same family
                     if listener_conf.ip.is_ipv4() {
                         detected_ip.ipv4.unwrap_or(listener_conf.ip)
                     } else {
@@ -106,26 +121,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if !config.show_link.is_empty() {
                     info!("--- Proxy Links for {} ---", public_ip);
                     for user_name in &config.show_link {
-                        if let Some(secret) = config.users.get(user_name) {
+                        if let Some(secret) = config.access.users.get(user_name) {
                             info!("User: {}", user_name);
 
-                            // Classic
-                            if config.modes.classic {
+                            if config.general.modes.classic {
                                 info!("  Classic: tg://proxy?server={}&port={}&secret={}", 
-                                    public_ip, config.port, secret);
+                                    public_ip, config.server.port, secret);
                             }
 
-                            // DD (Secure)
-                            if config.modes.secure {
+                            if config.general.modes.secure {
                                 info!("  DD:      tg://proxy?server={}&port={}&secret=dd{}", 
-                                    public_ip, config.port, secret);
+                                    public_ip, config.server.port, secret);
                             }
 
-                            // EE-TLS (FakeTLS)
-                            if config.modes.tls {
-                                let domain_hex = hex::encode(&config.tls_domain);
+                            if config.general.modes.tls {
+                                let domain_hex = hex::encode(&config.censorship.tls_domain);
                                 info!("  EE-TLS:  tg://proxy?server={}&port={}&secret=ee{}{}", 
-                                    public_ip, config.port, secret, domain_hex);
+                                    public_ip, config.server.port, secret, domain_hex);
                             }
                         } else {
                             warn!("User '{}' specified in show_link not found in users list", user_name);
@@ -153,6 +165,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let stats = stats.clone();
         let upstream_manager = upstream_manager.clone();
         let replay_checker = replay_checker.clone();
+        let buffer_pool = buffer_pool.clone();
         
         tokio::spawn(async move {
             loop {
@@ -162,6 +175,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let stats = stats.clone();
                         let upstream_manager = upstream_manager.clone();
                         let replay_checker = replay_checker.clone();
+                        let buffer_pool = buffer_pool.clone();
                         
                         tokio::spawn(async move {
                             if let Err(e) = ClientHandler::new(
@@ -170,10 +184,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 config, 
                                 stats,
                                 upstream_manager,
-                                replay_checker // Pass global checker
+                                replay_checker,
+                                buffer_pool
                             ).run().await {
                                 // Log only relevant errors
-                                // debug!("Connection error: {}", e);
                             }
                         });
                     }

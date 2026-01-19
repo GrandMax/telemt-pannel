@@ -297,16 +297,16 @@ pub type StreamResult<T> = std::result::Result<T, StreamError>;
 
 /// Result with optional bad client handling
 #[derive(Debug)]
-pub enum HandshakeResult<T> {
+pub enum HandshakeResult<T, R, W> {
     /// Handshake succeeded
     Success(T),
-    /// Client failed validation, needs masking
-    BadClient,
+    /// Client failed validation, needs masking. Returns ownership of streams.
+    BadClient { reader: R, writer: W },
     /// Error occurred
     Error(ProxyError),
 }
 
-impl<T> HandshakeResult<T> {
+impl<T, R, W> HandshakeResult<T, R, W> {
     /// Check if successful
     pub fn is_success(&self) -> bool {
         matches!(self, HandshakeResult::Success(_))
@@ -314,49 +314,32 @@ impl<T> HandshakeResult<T> {
     
     /// Check if bad client
     pub fn is_bad_client(&self) -> bool {
-        matches!(self, HandshakeResult::BadClient)
-    }
-    
-    /// Convert to Result, treating BadClient as error
-    pub fn into_result(self) -> Result<T> {
-        match self {
-            HandshakeResult::Success(v) => Ok(v),
-            HandshakeResult::BadClient => Err(ProxyError::InvalidHandshake("Bad client".into())),
-            HandshakeResult::Error(e) => Err(e),
-        }
+        matches!(self, HandshakeResult::BadClient { .. })
     }
     
     /// Map the success value
-    pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> HandshakeResult<U> {
+    pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> HandshakeResult<U, R, W> {
         match self {
             HandshakeResult::Success(v) => HandshakeResult::Success(f(v)),
-            HandshakeResult::BadClient => HandshakeResult::BadClient,
+            HandshakeResult::BadClient { reader, writer } => HandshakeResult::BadClient { reader, writer },
             HandshakeResult::Error(e) => HandshakeResult::Error(e),
-        }
-    }
-    
-    /// Convert success to Option
-    pub fn ok(self) -> Option<T> {
-        match self {
-            HandshakeResult::Success(v) => Some(v),
-            _ => None,
         }
     }
 }
 
-impl<T> From<ProxyError> for HandshakeResult<T> {
+impl<T, R, W> From<ProxyError> for HandshakeResult<T, R, W> {
     fn from(err: ProxyError) -> Self {
         HandshakeResult::Error(err)
     }
 }
 
-impl<T> From<std::io::Error> for HandshakeResult<T> {
+impl<T, R, W> From<std::io::Error> for HandshakeResult<T, R, W> {
     fn from(err: std::io::Error) -> Self {
         HandshakeResult::Error(ProxyError::Io(err))
     }
 }
 
-impl<T> From<StreamError> for HandshakeResult<T> {
+impl<T, R, W> From<StreamError> for HandshakeResult<T, R, W> {
     fn from(err: StreamError) -> Self {
         HandshakeResult::Error(ProxyError::Stream(err))
     }

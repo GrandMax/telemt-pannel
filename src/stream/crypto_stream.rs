@@ -45,6 +45,11 @@
 //! - when upstream is Pending but pending still has room: accept `to_accept` bytes and
 //!   encrypt+append ciphertext directly into pending (in-place encryption of appended range)
 
+//! Encrypted stream wrappers using AES-CTR
+//!
+//! This module provides stateful async stream wrappers that handle
+//! encryption/decryption with proper partial read/write handling.
+
 use bytes::{Bytes, BytesMut};
 use std::io::{self, ErrorKind, Result};
 use std::pin::Pin;
@@ -58,8 +63,9 @@ use super::state::{StreamState, YieldBuffer};
 // ============= Constants =============
 
 /// Maximum size for pending ciphertext buffer (bounded backpressure).
-/// 512 KiB tends to work well for mobile networks and avoids huge latency spikes.
-const MAX_PENDING_WRITE: usize = 524_288;
+/// Reduced to 64KB to prevent bufferbloat on mobile networks.
+/// 512KB was causing high latency on 3G/LTE connections.
+const MAX_PENDING_WRITE: usize = 64 * 1024;
 
 /// Default read buffer capacity (reader mostly decrypts in-place into caller buffer).
 const DEFAULT_READ_CAPACITY: usize = 16 * 1024;
@@ -99,22 +105,6 @@ impl StreamState for CryptoReaderState {
 // ============= CryptoReader =============
 
 /// Reader that decrypts data using AES-CTR with proper state machine.
-///
-/// This reader handles partial reads correctly by maintaining internal state
-/// and never losing any data that has been read from upstream.
-///
-/// # State Machine
-///
-/// ┌──────────┐     read      ┌──────────┐
-/// │   Idle   │ ------------> │ Yielding │
-/// │          │ <------------ │          │
-/// └──────────┘    drained    └──────────┘
-///      │                          │
-///      │         errors           │
-///      ▼                          ▼
-/// ┌──────────────────────────────────────┐
-/// │              Poisoned                │
-/// └──────────────────────────────────────┘
 pub struct CryptoReader<R> {
     upstream: R,
     decryptor: AesCtr,
@@ -315,10 +305,6 @@ impl<R: AsyncRead + Unpin> CryptoReader<R> {
 // ============= Pending Ciphertext =============
 
 /// Pending ciphertext buffer with explicit position and strict max size.
-///
-/// - append plaintext then encrypt appended range in-place - one-touch copy, no extra Vec
-/// - move ciphertext from scratch into pending without copying
-/// - explicit compaction behavior for long-lived connections
 #[derive(Debug)]
 struct PendingCiphertext {
     buf: BytesMut,
@@ -361,15 +347,13 @@ impl PendingCiphertext {
         }
 
         // Compact when a large prefix was consumed.
-        if self.pos >= 32 * 1024 {
+        if self.pos >= 16 * 1024 {
             let _ = self.buf.split_to(self.pos);
             self.pos = 0;
         }
     }
 
     /// Replace the entire pending ciphertext by moving `src` in (swap, no copy).
-    ///
-    /// Precondition: src.len() <= max_len.
     fn replace_with(&mut self, mut src: BytesMut) {
         debug_assert!(src.len() <= self.max_len);
 
@@ -381,12 +365,6 @@ impl PendingCiphertext {
     }
 
     /// Append plaintext and encrypt appended range in-place.
-    ///
-    /// This is the high-throughput buffering path:
-    /// - copy plaintext into pending buffer
-    /// - encrypt only the newly appended bytes
-    ///
-    /// CTR state advances by exactly plaintext.len().
     fn push_encrypted(&mut self, encryptor: &mut AesCtr, plaintext: &[u8]) -> Result<()> {
         if plaintext.is_empty() {
             return Ok(());
@@ -444,21 +422,10 @@ impl StreamState for CryptoWriterState {
 // ============= CryptoWriter =============
 
 /// Writer that encrypts data using AES-CTR with correct async semantics.
-///
-/// - CTR state advances exactly by the number of bytes we report as written
-/// - If upstream blocks, ciphertext is buffered/bounded
-/// - Backpressure is applied when buffer is full
 pub struct CryptoWriter<W> {
     upstream: W,
     encryptor: AesCtr,
     state: CryptoWriterState,
-
-    /// Scratch ciphertext for fast "write-through" path.
-    ///
-    /// Flow:
-    /// - encrypt plaintext into scratch
-    /// - try upstream write
-    /// - if Pending/partial: move remainder into pending without re-encrypting
     scratch: BytesMut,
 }
 
@@ -531,9 +498,6 @@ impl<W> CryptoWriter<W> {
     }
 
     /// Select how many plaintext bytes can be accepted in buffering path
-    ///
-    /// Requirement: worst case - upstream pending, must buffer all ciphertext
-    /// for the accepted bytes
     fn select_to_accept_for_buffering(state: &CryptoWriterState, buf_len: usize) -> usize {
         if buf_len == 0 {
             return 0;
@@ -557,11 +521,6 @@ impl<W> CryptoWriter<W> {
 
 impl<W: AsyncWrite + Unpin> CryptoWriter<W> {
     /// Flush as much pending ciphertext as possible
-    ///
-    /// Returns
-    /// - Ready(Ok(())) if all pending is flushed or was none
-    /// - Pending if upstream would block
-    /// - Ready(Err(_)) on error
     fn poll_flush_pending(&mut self, cx: &mut Context<'_>) -> Poll<Result<()>> {
         loop {
             match &mut self.state {
@@ -606,14 +565,6 @@ impl<W: AsyncWrite + Unpin> CryptoWriter<W> {
 
                         Poll::Ready(Ok(n)) => {
                             pending.advance(n);
-
-                            trace!(
-                                flushed = n,
-                                pending_left = pending.pending_len(),
-                                "CryptoWriter: flushed pending ciphertext"
-                            );
-
-                            // continue loop to flush more
                             continue;
                         }
                     }
@@ -643,9 +594,6 @@ impl<W: AsyncWrite + Unpin> AsyncWrite for CryptoWriter<W> {
         }
 
         // 1) If we have pending ciphertext, prioritize flushing it
-        //    If upstream pending
-        //		-> still accept some plaintext ONLY if we can buffer
-        // 		all ciphertext for the accepted portion - bounded
         if matches!(this.state, CryptoWriterState::Flushing { .. }) {
             match this.poll_flush_pending(cx) {
                 Poll::Ready(Ok(())) => {
@@ -654,8 +602,6 @@ impl<W: AsyncWrite + Unpin> AsyncWrite for CryptoWriter<W> {
                 Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
                 Poll::Pending => {
                     // Upstream blocked. Apply ideal backpressure
-                    // - accept up to remaining pending capacity
-                    // - if no capacity -> pending
                     let to_accept =
                         Self::select_to_accept_for_buffering(&this.state, buf.len());
 
@@ -670,24 +616,16 @@ impl<W: AsyncWrite + Unpin> AsyncWrite for CryptoWriter<W> {
 
                     let plaintext = &buf[..to_accept];
 
-                    // Disjoint borrows: borrow encryptor and state separately via a match
+                    // Disjoint borrows
                     let encryptor = &mut this.encryptor;
                     let pending = Self::ensure_pending(&mut this.state);
 
-                    // Should not WouldBlock because to_accept <= remaining_capacity
                     if let Err(e) = pending.push_encrypted(encryptor, plaintext) {
                         if e.kind() == ErrorKind::WouldBlock {
                             return Poll::Pending;
                         }
                         return Poll::Ready(Err(e));
                     }
-
-                    trace!(
-                        accepted = to_accept,
-                        pending_len = pending.pending_len(),
-                        pending_cap = pending.remaining_capacity(),
-                        "CryptoWriter: upstream Pending, buffered ciphertext (accepted plaintext)"
-                    );
 
                     return Poll::Ready(Ok(to_accept));
                 }
@@ -697,9 +635,6 @@ impl<W: AsyncWrite + Unpin> AsyncWrite for CryptoWriter<W> {
         // 2) Fast path: pending empty -> write-through
         debug_assert!(matches!(this.state, CryptoWriterState::Idle));
 
-        // Worst-case buffering requirement
-        // - If upstream becomes pending -> buffer full ciphertext for accepted bytes
-        //   -> accept at most MAX_PENDING_WRITE per poll_write call
         let to_accept = buf.len().min(MAX_PENDING_WRITE);
         let plaintext = &buf[..to_accept];
 
@@ -708,17 +643,10 @@ impl<W: AsyncWrite + Unpin> AsyncWrite for CryptoWriter<W> {
         match Pin::new(&mut this.upstream).poll_write(cx, &this.scratch) {
             Poll::Pending => {
                 // Upstream blocked: buffer FULL ciphertext for accepted bytes.
-                // Move scratch into pending without copying.
                 let ciphertext = std::mem::take(&mut this.scratch);
 
                 let pending = Self::ensure_pending(&mut this.state);
                 pending.replace_with(ciphertext);
-
-                trace!(
-                    accepted = to_accept,
-                    pending_len = pending.pending_len(),
-                    "CryptoWriter: write-through got Pending, buffered full ciphertext"
-                );
 
                 Poll::Ready(Ok(to_accept))
             }
@@ -736,26 +664,11 @@ impl<W: AsyncWrite + Unpin> AsyncWrite for CryptoWriter<W> {
 
             Poll::Ready(Ok(n)) => {
                 if n == this.scratch.len() {
-                    trace!(
-                        accepted = to_accept,
-                        ciphertext_len = this.scratch.len(),
-                        "CryptoWriter: write-through wrote full ciphertext directly"
-                    );
                     this.scratch.clear();
                     return Poll::Ready(Ok(to_accept));
                 }
 
-                // Partial upstream write of ciphertext:
-                // We accepted `to_accept` plaintext bytes, CTR already advanced for to_accept
-                // Must buffer the remainder ciphertext
-                warn!(
-                    accepted = to_accept,
-                    ciphertext_len = this.scratch.len(),
-                    written_ciphertext = n,
-                    "CryptoWriter: partial upstream write, buffering remainder"
-                );
-
-                // Split off remainder without copying
+                // Partial upstream write of ciphertext
                 let remainder = this.scratch.split_off(n);
                 this.scratch.clear();
 
@@ -788,7 +701,6 @@ impl<W: AsyncWrite + Unpin> AsyncWrite for CryptoWriter<W> {
         let this = self.get_mut();
 
         // Best-effort flush pending ciphertext before shutdown
-        // If upstream blocks, proceed to shutdown anyway
         match this.poll_flush_pending(cx) {
             Poll::Pending => {
                 debug!(
@@ -807,9 +719,6 @@ impl<W: AsyncWrite + Unpin> AsyncWrite for CryptoWriter<W> {
 // ============= PassthroughStream =============
 
 /// Passthrough stream for fast mode - no encryption/decryption
-///
-/// Used when keys are set up so that client and Telegram use the same
-/// encryption, allowing data to pass through without re-encryption
 pub struct PassthroughStream<S> {
     inner: S,
 }

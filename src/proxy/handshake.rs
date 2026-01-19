@@ -42,7 +42,7 @@ pub async fn handle_tls_handshake<R, W>(
     peer: SocketAddr,
     config: &ProxyConfig,
     replay_checker: &ReplayChecker,
-) -> HandshakeResult<(FakeTlsReader<R>, FakeTlsWriter<W>, String)>
+) -> HandshakeResult<(FakeTlsReader<R>, FakeTlsWriter<W>, String), R, W>
 where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
@@ -52,7 +52,7 @@ where
     // Check minimum length
     if handshake.len() < tls::TLS_DIGEST_POS + tls::TLS_DIGEST_LEN + 1 {
         debug!(peer = %peer, "TLS handshake too short");
-        return HandshakeResult::BadClient;
+        return HandshakeResult::BadClient { reader, writer };
     }
     
     // Extract digest for replay check
@@ -62,11 +62,11 @@ where
     // Check for replay
     if replay_checker.check_tls_digest(digest_half) {
         warn!(peer = %peer, "TLS replay attack detected");
-        return HandshakeResult::BadClient;
+        return HandshakeResult::BadClient { reader, writer };
     }
     
     // Build secrets list
-    let secrets: Vec<(String, Vec<u8>)> = config.users.iter()
+    let secrets: Vec<(String, Vec<u8>)> = config.access.users.iter()
         .filter_map(|(name, hex)| {
             hex::decode(hex).ok().map(|bytes| (name.clone(), bytes))
         })
@@ -78,19 +78,19 @@ where
     let validation = match tls::validate_tls_handshake(
         handshake,
         &secrets,
-        config.ignore_time_skew,
+        config.access.ignore_time_skew,
     ) {
         Some(v) => v,
         None => {
             debug!(peer = %peer, "TLS handshake validation failed - no matching user");
-            return HandshakeResult::BadClient;
+            return HandshakeResult::BadClient { reader, writer };
         }
     };
     
     // Get secret for response
     let secret = match secrets.iter().find(|(name, _)| *name == validation.user) {
         Some((_, s)) => s,
-        None => return HandshakeResult::BadClient,
+        None => return HandshakeResult::BadClient { reader, writer },
     };
     
     // Build and send response
@@ -98,7 +98,7 @@ where
         secret,
         &validation.digest,
         &validation.session_id,
-        config.fake_cert_len,
+        config.censorship.fake_cert_len,
     );
     
     debug!(peer = %peer, response_len = response.len(), "Sending TLS ServerHello");
@@ -136,7 +136,7 @@ pub async fn handle_mtproto_handshake<R, W>(
     config: &ProxyConfig,
     replay_checker: &ReplayChecker,
     is_tls: bool,
-) -> HandshakeResult<(CryptoReader<R>, CryptoWriter<W>, HandshakeSuccess)>
+) -> HandshakeResult<(CryptoReader<R>, CryptoWriter<W>, HandshakeSuccess), R, W>
 where
     R: AsyncRead + Unpin + Send,
     W: AsyncWrite + Unpin + Send,
@@ -155,14 +155,14 @@ where
     // Check for replay
     if replay_checker.check_handshake(dec_prekey_iv) {
         warn!(peer = %peer, "MTProto replay attack detected");
-        return HandshakeResult::BadClient;
+        return HandshakeResult::BadClient { reader, writer };
     }
     
     // Reversed for encryption direction
     let enc_prekey_iv: Vec<u8> = dec_prekey_iv.iter().rev().copied().collect();
     
     // Try each user's secret
-    for (user, secret_hex) in &config.users {
+    for (user, secret_hex) in &config.access.users {
         let secret = match hex::decode(secret_hex) {
             Ok(s) => s,
             Err(_) => continue,
@@ -208,9 +208,9 @@ where
         // Check if mode is enabled
         let mode_ok = match proto_tag {
             ProtoTag::Secure => {
-                if is_tls { config.modes.tls } else { config.modes.secure }
+                if is_tls { config.general.modes.tls } else { config.general.modes.secure }
             }
-            ProtoTag::Intermediate | ProtoTag::Abridged => config.modes.classic,
+            ProtoTag::Intermediate | ProtoTag::Abridged => config.general.modes.classic,
         };
         
         if !mode_ok {
@@ -270,7 +270,7 @@ where
     }
     
     debug!(peer = %peer, "MTProto handshake: no matching user found");
-    HandshakeResult::BadClient
+    HandshakeResult::BadClient { reader, writer }
 }
 
 /// Generate nonce for Telegram connection

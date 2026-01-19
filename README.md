@@ -118,44 +118,100 @@ then Ctrl+X -> Y -> Enter to save
 ## Configuration
 ### Minimal Configuration for First Start
 ```toml
-port = 443                              # Listening port
-show_link = ["tele", "hello"]          # Specify users, for whom will be displayed the links
+# === General Settings ===
+[general]
+prefer_ipv6 = false
+fast_mode = true
+use_middle_proxy = false
+# ad_tag = "..."
 
-tls_domain = "petrovich.ru"             # Domain for ee-secret and masking
-mask = true                             # Enable masking of bad traffic
-mask_host = "petrovich.ru"              # Optional override for mask destination
-mask_port = 443                         # Port for masking
+[general.modes]
+classic = false
+secure = false
+tls = true
 
-prefer_ipv6 = false                     # Try IPv6 DCs first if true
-fast_mode = true                        # Use "fast" obfuscation variant
+# === Server Binding ===
+[server]
+port = 443
+listen_addr_ipv4 = "0.0.0.0"
+listen_addr_ipv6 = "::"
+# metrics_port = 9090
+# metrics_whitelist = ["127.0.0.1", "::1"]
 
-client_keepalive = 600                  # Seconds
-client_ack_timeout = 300                # Seconds
+# Listen on multiple interfaces/IPs (overrides listen_addr_*)
+[[server.listeners]]
+ip = "0.0.0.0"
+# announce_ip = "1.2.3.4" # Optional: Public IP for tg:// links
 
-[modes]
-classic = true                          # Plain obfuscated mode
-secure = true                           # dd-prefix mode
-tls = true                              # Fake TLS (ee-prefix)
+[[server.listeners]]
+ip = "::"
 
-[users]
-hello = "00000000000000000000000000000000" # Replace the secret with one generated before
-tele = "00000000000000000000000000000000" # Replace the secret with one generated before
+# === Timeouts (in seconds) ===
+[timeouts]
+client_handshake = 15
+tg_connect = 10
+client_keepalive = 60
+client_ack = 300
+
+# === Anti-Censorship & Masking ===
+[censorship]
+tls_domain = "petrovich.ru"
+mask = true
+mask_port = 443
+# mask_host = "petrovich.ru" # Defaults to tls_domain if not set
+fake_cert_len = 2048
+
+# === Access Control & Users ===
+# username "hello" is used for example
+[access]
+replay_check_len = 65536
+ignore_time_skew = false
+
+[access.users]
+# format: "username" = "32_hex_chars_secret"
+hello = "00000000000000000000000000000000"
+
+# [access.user_max_tcp_conns]
+# hello = 50
+
+# [access.user_data_quota]
+# hello = 1073741824 # 1 GB
+
+# === Upstreams & Routing ===
+# By default, direct connection is used, but you can add SOCKS proxy
+
+# Direct - Default
+[[upstreams]]
+type = "direct"
+enabled = true
+weight = 10
+
+# SOCKS5
+# [[upstreams]]
+# type = "socks5"
+# address = "127.0.0.1:9050"
+# enabled = false
+# weight = 1
+
+# === UI ===
+# Users to show in the startup log (tg:// links)
+show_link = ["hello"]
 ```
 ### Advanced
 #### Adtag
-To use channel advertising and usage statistics from Telegram, get Adtag from [@mtproxybot](https://t.me/mtproxybot), add this parameter to the end of config.toml and specify it
+To use channel advertising and usage statistics from Telegram, get Adtag from [@mtproxybot](https://t.me/mtproxybot), add this parameter to section `[General]`
 ```toml
 ad_tag = "00000000000000000000000000000000" # Replace zeros to your adtag from @mtproxybot
 ```
 #### Listening and Announce IPs
-To specify listening address and/or address in links, add to the end of config.toml:
+To specify listening address and/or address in links, add to section `[[server.listeners]]` of config.toml:
 ```toml
-[[listeners]]
+[[server.listeners]]
 ip = "0.0.0.0"          # 0.0.0.0 = all IPs; your IP = specific listening
 announce_ip = "1.2.3.4" # IP in links; comment with # if not used
 ```
 #### Upstream Manager
-To specify upstream, add to the end of config.toml:
+To specify upstream, add to section `[[upstreams]]` of config.toml:
 ##### Bind on IP
 ```toml
 [[upstreams]]

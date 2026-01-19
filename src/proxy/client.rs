@@ -14,7 +14,7 @@ use crate::protocol::constants::*;
 use crate::protocol::tls;
 use crate::stats::{Stats, ReplayChecker};
 use crate::transport::{configure_client_socket, UpstreamManager};
-use crate::stream::{CryptoReader, CryptoWriter, FakeTlsReader, FakeTlsWriter};
+use crate::stream::{CryptoReader, CryptoWriter, FakeTlsReader, FakeTlsWriter, BufferPool};
 use crate::crypto::AesCtr;
 
 use super::handshake::{
@@ -35,6 +35,7 @@ pub struct RunningClientHandler {
     stats: Arc<Stats>,
     replay_checker: Arc<ReplayChecker>,
     upstream_manager: Arc<UpstreamManager>,
+    buffer_pool: Arc<BufferPool>,
 }
 
 impl ClientHandler {
@@ -45,11 +46,9 @@ impl ClientHandler {
         config: Arc<ProxyConfig>,
         stats: Arc<Stats>,
         upstream_manager: Arc<UpstreamManager>,
-        replay_checker: Arc<ReplayChecker>, // CHANGED: Accept global checker
+        replay_checker: Arc<ReplayChecker>,
+        buffer_pool: Arc<BufferPool>,
     ) -> RunningClientHandler {
-        // CHANGED: Removed local creation of ReplayChecker.
-        // It is now passed from main.rs to ensure global replay protection.
-        
         RunningClientHandler {
             stream,
             peer,
@@ -57,6 +56,7 @@ impl ClientHandler {
             stats,
             replay_checker,
             upstream_manager,
+            buffer_pool,
         }
     }
 }
@@ -72,14 +72,14 @@ impl RunningClientHandler {
         // Configure socket
         if let Err(e) = configure_client_socket(
             &self.stream,
-            self.config.client_keepalive,
-            self.config.client_ack_timeout,
+            self.config.timeouts.client_keepalive,
+            self.config.timeouts.client_ack,
         ) {
             debug!(peer = %peer, error = %e, "Failed to configure client socket");
         }
         
         // Perform handshake with timeout
-        let handshake_timeout = Duration::from_secs(self.config.client_handshake_timeout);
+        let handshake_timeout = Duration::from_secs(self.config.timeouts.client_handshake);
         
         // Clone stats for error handling block
         let stats = self.stats.clone();
@@ -139,7 +139,9 @@ impl RunningClientHandler {
         if tls_len < 512 {
             debug!(peer = %peer, tls_len = tls_len, "TLS handshake too short");
             self.stats.increment_connects_bad();
-            handle_bad_client(self.stream, &first_bytes, &self.config).await;
+            // FIX: Split stream into reader/writer for handle_bad_client
+            let (reader, writer) = self.stream.into_split();
+            handle_bad_client(reader, writer, &first_bytes, &self.config).await;
             return Ok(());
         }
         
@@ -152,6 +154,7 @@ impl RunningClientHandler {
         let config = self.config.clone();
         let replay_checker = self.replay_checker.clone();
         let stats = self.stats.clone();
+        let buffer_pool = self.buffer_pool.clone();
         
         // Split stream for reading/writing
         let (read_half, write_half) = self.stream.into_split();
@@ -166,8 +169,9 @@ impl RunningClientHandler {
             &replay_checker,
         ).await {
             HandshakeResult::Success(result) => result,
-            HandshakeResult::BadClient => {
+            HandshakeResult::BadClient { reader, writer } => {
                 stats.increment_connects_bad();
+                handle_bad_client(reader, writer, &handshake, &config).await;
                 return Ok(());
             }
             HandshakeResult::Error(e) => return Err(e),
@@ -190,19 +194,14 @@ impl RunningClientHandler {
             true,
         ).await {
             HandshakeResult::Success(result) => result,
-            HandshakeResult::BadClient => {
+            HandshakeResult::BadClient { reader, writer } => {
                 stats.increment_connects_bad();
+                // Valid TLS but invalid MTProto - drop
+                debug!(peer = %peer, "Valid TLS but invalid MTProto handshake - dropping");
                 return Ok(());
             }
             HandshakeResult::Error(e) => return Err(e),
         };
-        
-        // Handle authenticated client
-        // We can't use self.handle_authenticated_inner because self is partially moved
-        // So we call it as an associated function or method on a new struct, 
-        // or just inline the logic / use a static method.
-        // Since handle_authenticated_inner needs self.upstream_manager and self.stats, 
-        // we should pass them explicitly.
         
         Self::handle_authenticated_static(
             crypto_reader, 
@@ -210,7 +209,8 @@ impl RunningClientHandler {
             success, 
             self.upstream_manager, 
             self.stats, 
-            self.config
+            self.config,
+            buffer_pool
         ).await
     }
     
@@ -222,10 +222,12 @@ impl RunningClientHandler {
         let peer = self.peer;
         
         // Check if non-TLS modes are enabled
-        if !self.config.modes.classic && !self.config.modes.secure {
+        if !self.config.general.modes.classic && !self.config.general.modes.secure {
             debug!(peer = %peer, "Non-TLS modes disabled");
             self.stats.increment_connects_bad();
-            handle_bad_client(self.stream, &first_bytes, &self.config).await;
+            // FIX: Split stream into reader/writer for handle_bad_client
+            let (reader, writer) = self.stream.into_split();
+            handle_bad_client(reader, writer, &first_bytes, &self.config).await;
             return Ok(());
         }
         
@@ -238,6 +240,7 @@ impl RunningClientHandler {
         let config = self.config.clone();
         let replay_checker = self.replay_checker.clone();
         let stats = self.stats.clone();
+        let buffer_pool = self.buffer_pool.clone();
         
         // Split stream
         let (read_half, write_half) = self.stream.into_split();
@@ -253,8 +256,9 @@ impl RunningClientHandler {
             false,
         ).await {
             HandshakeResult::Success(result) => result,
-            HandshakeResult::BadClient => {
+            HandshakeResult::BadClient { reader, writer } => {
                 stats.increment_connects_bad();
+                handle_bad_client(reader, writer, &handshake, &config).await;
                 return Ok(());
             }
             HandshakeResult::Error(e) => return Err(e),
@@ -266,11 +270,12 @@ impl RunningClientHandler {
             success, 
             self.upstream_manager, 
             self.stats, 
-            self.config
+            self.config,
+            buffer_pool
         ).await
     }
     
-    /// Static version of handle_authenticated_inner to avoid ownership issues
+    /// Static version of handle_authenticated_inner
     async fn handle_authenticated_static<R, W>(
         client_reader: CryptoReader<R>,
         client_writer: CryptoWriter<W>,
@@ -278,6 +283,7 @@ impl RunningClientHandler {
         upstream_manager: Arc<UpstreamManager>,
         stats: Arc<Stats>,
         config: Arc<ProxyConfig>,
+        buffer_pool: Arc<BufferPool>,
     ) -> Result<()>
     where
         R: AsyncRead + Unpin + Send + 'static,
@@ -300,7 +306,7 @@ impl RunningClientHandler {
             dc = success.dc_idx,
             dc_addr = %dc_addr,
             proto = ?success.proto_tag,
-            fast_mode = config.fast_mode,
+            fast_mode = config.general.fast_mode,
             "Connecting to Telegram"
         );
         
@@ -322,7 +328,7 @@ impl RunningClientHandler {
         stats.increment_user_connects(user);
         stats.increment_user_curr_connects(user);
         
-        // Relay traffic
+        // Relay traffic using buffer pool
         let relay_result = relay_bidirectional(
             client_reader,
             client_writer,
@@ -330,6 +336,7 @@ impl RunningClientHandler {
             tg_writer,
             user,
             Arc::clone(&stats),
+            buffer_pool,
         ).await;
         
         // Update stats
@@ -346,14 +353,14 @@ impl RunningClientHandler {
     /// Check user limits (static version)
     fn check_user_limits_static(user: &str, config: &ProxyConfig, stats: &Stats) -> Result<()> {
         // Check expiration
-        if let Some(expiration) = config.user_expirations.get(user) {
+        if let Some(expiration) = config.access.user_expirations.get(user) {
             if chrono::Utc::now() > *expiration {
                 return Err(ProxyError::UserExpired { user: user.to_string() });
             }
         }
         
         // Check connection limit
-        if let Some(limit) = config.user_max_tcp_conns.get(user) {
+        if let Some(limit) = config.access.user_max_tcp_conns.get(user) {
             let current = stats.get_user_curr_connects(user);
             if current >= *limit as u64 {
                 return Err(ProxyError::ConnectionLimitExceeded { user: user.to_string() });
@@ -361,7 +368,7 @@ impl RunningClientHandler {
         }
         
         // Check data quota
-        if let Some(quota) = config.user_data_quota.get(user) {
+        if let Some(quota) = config.access.user_data_quota.get(user) {
             let used = stats.get_user_total_octets(user);
             if used >= *quota {
                 return Err(ProxyError::DataQuotaExceeded { user: user.to_string() });
@@ -375,7 +382,7 @@ impl RunningClientHandler {
     fn get_dc_addr_static(dc_idx: i16, config: &ProxyConfig) -> Result<SocketAddr> {
         let idx = (dc_idx.abs() - 1) as usize;
         
-        let datacenters = if config.prefer_ipv6 {
+        let datacenters = if config.general.prefer_ipv6 {
             &*TG_DATACENTERS_V6
         } else {
             &*TG_DATACENTERS_V4
@@ -399,7 +406,7 @@ impl RunningClientHandler {
             success.proto_tag,
             &success.dec_key,  // Client's dec key
             success.dec_iv,
-            config.fast_mode,
+            config.general.fast_mode,
         );
         
         // Encrypt nonce

@@ -7,14 +7,10 @@ use tokio::time::Instant;
 use tracing::{debug, trace, warn, info};
 use crate::error::Result;
 use crate::stats::Stats;
+use crate::stream::BufferPool;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-// CHANGED: Reduced from 128KB to 16KB to match TLS record size and prevent bufferbloat.
-// This is critical for iOS clients to maintain proper TCP flow control during uploads.
-const BUFFER_SIZE: usize = 16384;
-
 // Activity timeout for iOS compatibility (30 minutes)
-// iOS does not support TCP_USER_TIMEOUT, so we implement application-level timeout
 const ACTIVITY_TIMEOUT_SECS: u64 = 1800;
 
 /// Relay data bidirectionally between client and server
@@ -25,6 +21,7 @@ pub async fn relay_bidirectional<CR, CW, SR, SW>(
     mut server_writer: SW,
     user: &str,
     stats: Arc<Stats>,
+    buffer_pool: Arc<BufferPool>,
 ) -> Result<()>
 where
     CR: AsyncRead + Unpin + Send + 'static,
@@ -35,7 +32,6 @@ where
     let user_c2s = user.to_string();
     let user_s2c = user.to_string();
     
-    // Используем Arc::clone вместо stats.clone()
     let stats_c2s = Arc::clone(&stats);
     let stats_s2c = Arc::clone(&stats);
     
@@ -44,26 +40,29 @@ where
     let c2s_bytes_clone = Arc::clone(&c2s_bytes);
     let s2c_bytes_clone = Arc::clone(&s2c_bytes);
     
-    // Activity timeout for iOS compatibility
     let activity_timeout = Duration::from_secs(ACTIVITY_TIMEOUT_SECS);
     
-    // Client -> Server task with activity timeout
+    let pool_c2s = buffer_pool.clone();
+    let pool_s2c = buffer_pool.clone();
+    
+    // Client -> Server task
     let c2s = tokio::spawn(async move {
-        let mut buf = vec![0u8; BUFFER_SIZE];
+        // Get buffer from pool
+        let mut buf = pool_c2s.get();
         let mut total_bytes = 0u64;
+        let mut prev_total_bytes = 0u64;
         let mut msg_count = 0u64;
         let mut last_activity = Instant::now();
         let mut last_log = Instant::now();
         
         loop {
-            // Read with timeout to prevent infinite hang on iOS
+            // Read with timeout
             let read_result = tokio::time::timeout(
                 activity_timeout,
                 client_reader.read(&mut buf)
             ).await;
             
             match read_result {
-                // Timeout - no activity for too long
                 Err(_) => {
                     warn!(
                         user = %user_c2s,
@@ -76,7 +75,6 @@ where
                     break;
                 }
                 
-                // Read successful
                 Ok(Ok(0)) => {
                     debug!(
                         user = %user_c2s, 
@@ -101,21 +99,26 @@ where
                         user = %user_c2s,
                         bytes = n,
                         total = total_bytes,
-                        data_preview = %hex::encode(&buf[..n.min(32)]),
                         "C->S data"
                     );
                     
-                    // Log activity every 10 seconds for large transfers
-                    if last_log.elapsed() > Duration::from_secs(10) {
-                        let rate = total_bytes as f64 / last_log.elapsed().as_secs_f64();
-                        info!(
+                    // Log activity every 10 seconds with correct rate
+                    let elapsed = last_log.elapsed();
+                    if elapsed > Duration::from_secs(10) {
+                        let delta = total_bytes - prev_total_bytes;
+                        let rate = delta as f64 / elapsed.as_secs_f64();
+                        
+                        // Changed to DEBUG to reduce log spam
+                        debug!(
                             user = %user_c2s,
                             total_bytes = total_bytes,
                             msgs = msg_count,
                             rate_kbps = (rate / 1024.0) as u64,
                             "C->S transfer in progress"
                         );
+                        
                         last_log = Instant::now();
+                        prev_total_bytes = total_bytes;
                     }
                     
                     if let Err(e) = server_writer.write_all(&buf[..n]).await {
@@ -136,23 +139,23 @@ where
         }
     });
     
-    // Server -> Client task with activity timeout
+    // Server -> Client task
     let s2c = tokio::spawn(async move {
-        let mut buf = vec![0u8; BUFFER_SIZE];
+        // Get buffer from pool
+        let mut buf = pool_s2c.get();
         let mut total_bytes = 0u64;
+        let mut prev_total_bytes = 0u64;
         let mut msg_count = 0u64;
         let mut last_activity = Instant::now();
         let mut last_log = Instant::now();
         
         loop {
-            // Read with timeout to prevent infinite hang on iOS
             let read_result = tokio::time::timeout(
                 activity_timeout,
                 server_reader.read(&mut buf)
             ).await;
             
             match read_result {
-                // Timeout - no activity for too long
                 Err(_) => {
                     warn!(
                         user = %user_s2c,
@@ -165,7 +168,6 @@ where
                     break;
                 }
                 
-                // Read successful
                 Ok(Ok(0)) => {
                     debug!(
                         user = %user_s2c,
@@ -190,21 +192,25 @@ where
                         user = %user_s2c,
                         bytes = n,
                         total = total_bytes,
-                        data_preview = %hex::encode(&buf[..n.min(32)]),
                         "S->C data"
                     );
                     
-                    // Log activity every 10 seconds for large transfers
-                    if last_log.elapsed() > Duration::from_secs(10) {
-                        let rate = total_bytes as f64 / last_log.elapsed().as_secs_f64();
-                        info!(
+                    let elapsed = last_log.elapsed();
+                    if elapsed > Duration::from_secs(10) {
+                        let delta = total_bytes - prev_total_bytes;
+                        let rate = delta as f64 / elapsed.as_secs_f64();
+                        
+                        // Changed to DEBUG to reduce log spam
+                        debug!(
                             user = %user_s2c,
                             total_bytes = total_bytes,
                             msgs = msg_count,
                             rate_kbps = (rate / 1024.0) as u64,
                             "S->C transfer in progress"
                         );
+                        
                         last_log = Instant::now();
+                        prev_total_bytes = total_bytes;
                     }
                     
                     if let Err(e) = client_writer.write_all(&buf[..n]).await {
