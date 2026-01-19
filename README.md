@@ -247,7 +247,73 @@ enabled = true
 Since version 1.1, we have debugged masking perfectly, for all clients without "presenting" a key, 
 we transparently direct traffic to the target host. 
 - We consider this a breakthrough aspect, which few people managed to achieve in perfect form.
-- Based on this: if configured correctly, **TLS mode is completely identical to real-life handshake + communication** with a specified host.
+- Based on this: if configured correctly, **TLS mode is completely identical to real-life handshake + communication** with a specified host:
+```bash
+root@debian:~/telemt# curl -v -I --resolve petrovich.ru:443:212.220.88.77 https://petrovich.ru/
+* Added petrovich.ru:443:212.220.88.77 to DNS cache
+* Hostname petrovich.ru was found in DNS cache
+*   Trying 212.220.88.77:443...
+* Connected to petrovich.ru (212.220.88.77) port 443 (#0)
+* ALPN: offers h2,http/1.1
+* TLSv1.3 (OUT), TLS handshake, Client hello (1):
+*  CAfile: /etc/ssl/certs/ca-certificates.crt
+*  CApath: /etc/ssl/certs
+* TLSv1.3 (IN), TLS handshake, Server hello (2):
+* TLSv1.3 (IN), TLS handshake, Encrypted Extensions (8):
+* TLSv1.3 (IN), TLS handshake, Certificate (11):
+* TLSv1.3 (IN), TLS handshake, CERT verify (15):
+* TLSv1.3 (IN), TLS handshake, Finished (20):
+* TLSv1.3 (OUT), TLS change cipher, Change cipher spec (1):
+* TLSv1.3 (OUT), TLS handshake, Finished (20):
+* SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384
+* ALPN: server did not agree on a protocol. Uses default.
+* Server certificate:
+*  subject: C=RU; ST=Saint Petersburg; L=Saint Petersburg; O=STD Petrovich; CN=*.petrovich.ru
+*  start date: Jan 28 11:21:01 2025 GMT
+*  expire date: Mar  1 11:21:00 2026 GMT
+*  subjectAltName: host "petrovich.ru" matched cert's "petrovich.ru"
+*  issuer: C=BE; O=GlobalSign nv-sa; CN=GlobalSign RSA OV SSL CA 2018
+*  SSL certificate verify ok.
+* using HTTP/1.x
+> HEAD / HTTP/1.1
+> Host: petrovich.ru
+> User-Agent: curl/7.88.1
+> Accept: */*
+> 
+* TLSv1.3 (IN), TLS handshake, Newsession Ticket (4):
+* TLSv1.3 (IN), TLS handshake, Newsession Ticket (4):
+* old SSL session ID is stale, removing
+< HTTP/1.1 200 OK
+HTTP/1.1 200 OK
+< Server: Variti/0.9.3a
+Server: Variti/0.9.3a
+< Date: Thu, 01 Jan 2026 00:0000 GMT
+Date: Thu, 01 Jan 2026 00:0000 GMT
+< Access-Control-Allow-Origin: *
+Access-Control-Allow-Origin: *
+< Content-Type: text/html
+Content-Type: text/html
+< Cache-Control: no-store
+Cache-Control: no-store
+< Expires: Thu, 01 Jan 2026 00:0000 GMT
+Expires: Thu, 01 Jan 2026 00:0000 GMT
+< Pragma: no-cache
+Pragma: no-cache
+< Set-Cookie: ipp_uid=XXXXX/XXXXX/XXXXX==; Expires=Tue, 31 Dec 2040 23:59:59 GMT; Domain=.petrovich.ru; Path=/
+Set-Cookie: ipp_uid=XXXXX/XXXXX/XXXXX==; Expires=Tue, 31 Dec 2040 23:59:59 GMT; Domain=.petrovich.ru; Path=/
+< Content-Type: text/html
+Content-Type: text/html
+< Content-Length: 31253
+Content-Length: 31253
+< Connection: keep-alive
+Connection: keep-alive
+< Keep-Alive: timeout=60
+Keep-Alive: timeout=60
+
+< 
+* Connection #0 to host petrovich.ru left intact
+
+```
 ### Telegram Calls via MTProxy
 - Telegram architecture **does NOT allow calls via MTProxy**, but only via SOCKS5, which cannot be obfuscated
 ### How does DPI see MTProxy TLS?
