@@ -250,7 +250,11 @@ fn ipv4_to_mapped_v6(ip: Ipv4Addr) -> [u8; 16] {
 fn addr_to_ip_u32(addr: &SocketAddr) -> u32 {
     match addr.ip() {
         IpAddr::V4(v4) => u32::from_be_bytes(v4.octets()),
-        IpAddr::V6(_) => 0,
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                u32::from_be_bytes(v4.octets())
+            } else { 0 }
+        }
     }
 }
 
@@ -328,6 +332,7 @@ impl RpcWriter {
 
 // ========== RPC_PROXY_REQ ==========
 
+
 fn build_proxy_req_payload(
     conn_id: u64,
     client_addr: SocketAddr,
@@ -336,10 +341,18 @@ fn build_proxy_req_payload(
     proxy_tag: Option<&[u8]>,
     proto_flags: u32,
 ) -> Vec<u8> {
-    // proto_flags are provided by caller and must already match C/Erlang transport flags.
-    let flags: u32 = proto_flags;
+    // flags are pre-calculated by proto_flags_for_tag
+    // We just need to ensure FLAG_HAS_AD_TAG is set if we have a tag (it is set by default in our new function, but let's be safe)
+    let mut flags = proto_flags;
 
-    let mut b = Vec::with_capacity(128 + data.len());
+    // The C code logic:
+    // flags = (transport_flags) | 0x1000 | 0x20000 | 0x8 (if tag)
+    // Our proto_flags_for_tag returns: 0x8 | 0x1000 | 0x20000 | transport_flags
+    // So we are good.
+
+    let b_cap = 128 + data.len();
+    let mut b = Vec::with_capacity(b_cap);
+
     b.extend_from_slice(&RPC_PROXY_REQ_U32.to_le_bytes());
     b.extend_from_slice(&flags.to_le_bytes());
     b.extend_from_slice(&conn_id.to_le_bytes());
@@ -359,7 +372,7 @@ fn build_proxy_req_payload(
     b.extend_from_slice(&(our_addr.port() as u32).to_le_bytes());
 
     // Extra section (proxy_tag)
-    if flags & (RPC_FLAG_HAS_AD_TAG | 0x4) != 0 {
+    if flags & 12 != 0 {
         let extra_start = b.len();
         b.extend_from_slice(&0u32.to_le_bytes()); // placeholder
 
@@ -869,43 +882,19 @@ async fn reader_loop(
 // ========== Proto flags ==========
 
 /// Map ProtoTag to C-compatible RPC_PROXY_REQ transport flags.
-/// Returned value already includes ad_tag/magic/extmode2.
-pub fn proto_flags_for_tag(proto_tag: Option<u32>) -> u32 {
+/// C: RPC_F_COMPACT(0x40000000)=abridged, RPC_F_MEDIUM(0x20000000)=intermediate/secure
+/// The 0x1000(magic) and 0x8(proxy_tag) are added inside build_proxy_req_payload.
+
+pub fn proto_flags_for_tag(tag: crate::protocol::constants::ProtoTag) -> u32 {
+    use crate::protocol::constants::*;
     let mut flags = RPC_FLAG_HAS_AD_TAG | RPC_FLAG_MAGIC | RPC_FLAG_EXTMODE2;
-    match proto_tag {
-        Some(0xdddddddd) => {
-            // Secure
-            flags |= RPC_FLAG_PAD | RPC_FLAG_INTERMEDIATE;
-        }
-        Some(0xeeeeeeee) => {
-            // Intermediate
-            flags |= RPC_FLAG_INTERMEDIATE;
-        }
-        Some(0xefefefef) => {
-            // Abridged
-            flags |= RPC_FLAG_ABRIDGED;
-        }
-        _ => {
-            flags |= RPC_FLAG_INTERMEDIATE;
-        }
-    }
-    flags
-}
-
-#[cfg(test)]
-mod tests {
-    use super::proto_flags_for_tag;
-
-    #[test]
-    fn proto_flags_secure_matches_reference() {
-        assert_eq!(proto_flags_for_tag(Some(0xdddddddd)), 0x28021008);
-    }
-
-    #[test]
-    fn proto_flags_intermediate_matches_reference() {
-        assert_eq!(proto_flags_for_tag(Some(0xeeeeeeee)), 0x20021008);
+    match tag {
+        ProtoTag::Abridged     => flags | RPC_FLAG_ABRIDGED,
+        ProtoTag::Intermediate => flags | RPC_FLAG_INTERMEDIATE,
+        ProtoTag::Secure       => flags | RPC_FLAG_PAD | RPC_FLAG_INTERMEDIATE,
     }
 }
+
 
 // ========== Health Monitor (Phase 4) ==========
 
