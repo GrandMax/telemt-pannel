@@ -372,6 +372,7 @@ impl RunningClientHandler {
     ) -> Result<(CryptoReader<tokio::net::tcp::OwnedReadHalf>, CryptoWriter<tokio::net::tcp::OwnedWriteHalf>)> {
         let (nonce, tg_enc_key, tg_enc_iv, tg_dec_key, tg_dec_iv) = generate_tg_nonce(
             success.proto_tag,
+            success.dc_idx,
             &success.dec_key,
             success.dec_iv,
             rng,

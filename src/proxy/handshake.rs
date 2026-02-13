@@ -256,6 +256,7 @@ where
 /// Generate nonce for Telegram connection
 pub fn generate_tg_nonce(
     proto_tag: ProtoTag, 
+    dc_idx: i16,
     client_dec_key: &[u8; 32],
     client_dec_iv: u128,
     rng: &SecureRandom,
@@ -274,6 +275,8 @@ pub fn generate_tg_nonce(
         if RESERVED_NONCE_CONTINUES.contains(&continue_four) { continue; }
         
         nonce[PROTO_TAG_POS..PROTO_TAG_POS + 4].copy_from_slice(&proto_tag.to_bytes());
+        // CRITICAL: write dc_idx so upstream DC knows where to route
+        nonce[DC_IDX_POS..DC_IDX_POS + 2].copy_from_slice(&dc_idx.to_le_bytes());
         
         if fast_mode {
             nonce[SKIP_LEN..SKIP_LEN + KEY_LEN].copy_from_slice(client_dec_key);
@@ -320,7 +323,7 @@ mod tests {
         
         let rng = SecureRandom::new();
         let (nonce, _tg_enc_key, _tg_enc_iv, _tg_dec_key, _tg_dec_iv) = 
-            generate_tg_nonce(ProtoTag::Secure, &client_dec_key, client_dec_iv, &rng, false);
+            generate_tg_nonce(ProtoTag::Secure, 2, &client_dec_key, client_dec_iv, &rng, false);
         
         assert_eq!(nonce.len(), HANDSHAKE_LEN);
         
@@ -335,7 +338,7 @@ mod tests {
         
         let rng = SecureRandom::new();
         let (nonce, _, _, _, _) = 
-            generate_tg_nonce(ProtoTag::Secure, &client_dec_key, client_dec_iv, &rng, false);
+            generate_tg_nonce(ProtoTag::Secure, 2, &client_dec_key, client_dec_iv, &rng, false);
         
         let encrypted = encrypt_tg_nonce(&nonce);
         
