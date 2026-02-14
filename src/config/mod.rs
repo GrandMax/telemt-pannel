@@ -295,6 +295,9 @@ pub struct AccessConfig {
     #[serde(default)]
     pub user_data_quota: HashMap<String, u64>,
 
+    #[serde(default)]
+    pub user_max_unique_ips: HashMap<String, usize>,
+
     #[serde(default = "default_replay_check_len")]
     pub replay_check_len: usize,
 
@@ -317,6 +320,7 @@ impl Default for AccessConfig {
             user_max_tcp_conns: HashMap::new(),
             user_expirations: HashMap::new(),
             user_data_quota: HashMap::new(),
+            user_max_unique_ips: HashMap::new(),
             replay_check_len: default_replay_check_len(),
             replay_window_secs: default_replay_window_secs(),
             ignore_time_skew: false,
