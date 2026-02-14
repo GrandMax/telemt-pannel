@@ -3,23 +3,37 @@
 **Telemt** is a fast, secure, and feature-rich server written in Rust: it fully implements the official Telegram proxy algo and adds many production-ready improvements such as connection pooling, replay protection, detailed statistics, masking from "prying" eyes
 
 ## Emergency
-**Важное сообщение для пользователей из России**
+### RU
+Многие из вас столкнулись с проблемой загрузки медиа из каналов с >100k subs...
 
-Мы работаем над проектом с Нового года и сейчас готовим новый релиз - 1.2
+Мы уже знаем о проблеме: она связана с dc=203 - Telegram CDN и сейчас есть подтверждённое исправление...
 
-В нём имплементируется поддержка Middle Proxy Protocol - основного терминатора для Ad Tag:
-работа над ним идёт с 6 ферваля, а уже 10 февраля произошли "громкие события"...
+Сейчас оно принимо через добавление в конфиг:
+```toml
+[dc_overrides]
+"203" = "91.105.192.100:443"
+```
+Мы работаем над поиском всех адресов для каждого "нестандартного" DC...
 
-Если у вас есть компетенции в асинхронных сетевых приложениях - мы открыты к предложениям и pull requests
+Фикс вне конфига будет в релизе 2.0.0.2
 
-**Important message for users from Russia**
+Если у вас есть компетенции в асинхронных сетевых приложениях, анализе трафика, reverse engineering, network forensics - мы открыты к мыслям, предложениям, pull requests
 
-We've been working on the project since December 30 and are currently preparing a new release – 1.2
+### EN
+Many of you have encountered issues loading media from channels with over 100k subscribers…
 
-It implements support for the Middle Proxy Protocol – the primary point for the Ad Tag:
-development on it started on February 6th, and by February 10th, "big activity" in Russia had already "taken place"...
+We’re already aware of the problem: it’s related to `dc=203` – Telegram CDN – and we now have a confirmed fix.
 
-If you have expertise in asynchronous network applications – we are open to ideas and pull requests!
+Currently, you can apply it by adding the following to your config:
+```toml
+[dc_overrides]
+"203" = "91.105.192.100:443"
+```
+We’re working on identifying all addresses for every “non‑standard” DC…
+
+The fix will be included in release 2.0.0.2, no manual config needed.
+
+If you have expertise in asynchronous network applications, traffic analysis, reverse engineering, or network forensics – we’re open to ideas, suggestions, and pull requests.
 
 # Features
 💥 The configuration structure has changed since version 1.1.0.0. change it in your environment!
