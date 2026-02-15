@@ -18,12 +18,13 @@
 - с высокоточной диагностикой криптографии через `ME_DIAG`  
 
 Для использования нужно:
-0. Версия `telemt` ≥3.0.0
-1. Выполнение любого из наборов условий:
+
+1. Версия `telemt` ≥3.0.0
+2. Выполнение любого из наборов условий:
    - публичный IP для исходящих соединений установлен на интерфейса инстанса с `telemt`
      - ЛИБО
    - вы используете NAT 1:1 + включили STUN-пробинг
-2. В конфиге, в секции `[general]` указать:
+3. В конфиге, в секции `[general]` указать:
 ```toml
 use_middle_proxy = true
 ```
@@ -54,12 +55,11 @@ On February 15, we released `telemt 3` with support for Middle-End Proxy, which 
 - high-precision cryptography diagnostics via `ME_DIAG`  
 
 To use this feature, the following requirements must be met:
-0. `telemt` version ≥ 3.0.0  
-1. One of the following conditions satisfied:
+1. `telemt` version ≥ 3.0.0
+2. One of the following conditions satisfied:
    - the instance running `telemt` has a public IP address assigned to its network interface for outbound connections  
      - OR
    - you are using 1:1 NAT and have STUN probing enabled  
-
 3. In the config file, under the `[general]` section, specify:
 ```toml
 use_middle_proxy = true
