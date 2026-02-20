@@ -23,6 +23,7 @@ mod proxy;
 mod stats;
 mod stream;
 mod transport;
+mod tls_front;
 mod util;
 
 use crate::config::{LogLevel, ProxyConfig};
@@ -36,6 +37,7 @@ use crate::transport::middle_proxy::{
     MePool, fetch_proxy_config, run_me_ping, MePingFamily, MePingSample, format_sample_line,
 };
 use crate::transport::{ListenOptions, UpstreamManager, create_listener};
+use crate::tls_front::TlsFrontCache;
 
 fn parse_cli() -> (String, bool, Option<String>) {
     let mut config_path = "config.toml".to_string();
@@ -129,12 +131,22 @@ fn print_proxy_links(host: &str, port: u16, config: &ProxyConfig) {
                 );
             }
             if config.general.modes.tls {
-                let domain_hex = hex::encode(&config.censorship.tls_domain);
-                info!(
-                    target: "telemt::links",
-                    "  EE-TLS:  tg://proxy?server={}&port={}&secret=ee{}{}",
-                    host, port, secret, domain_hex
-                );
+                let mut domains = Vec::with_capacity(1 + config.censorship.tls_domains.len());
+                domains.push(config.censorship.tls_domain.clone());
+                for d in &config.censorship.tls_domains {
+                    if !domains.contains(d) {
+                        domains.push(d.clone());
+                    }
+                }
+
+                for domain in domains {
+                    let domain_hex = hex::encode(&domain);
+                    info!(
+                        target: "telemt::links",
+                        "  EE-TLS:  tg://proxy?server={}&port={}&secret=ee{}{}",
+                        host, port, secret, domain_hex
+                    );
+                }
             }
         } else {
             warn!(target: "telemt::links", "User '{}' in show_link not found", user_name);
@@ -246,6 +258,46 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     if !config.access.user_max_unique_ips.is_empty() {
         info!("IP limits configured for {} users", config.access.user_max_unique_ips.len());
     }
+
+    // TLS front cache (optional emulation)
+    let mut tls_domains = Vec::with_capacity(1 + config.censorship.tls_domains.len());
+    tls_domains.push(config.censorship.tls_domain.clone());
+    for d in &config.censorship.tls_domains {
+        if !tls_domains.contains(d) {
+            tls_domains.push(d.clone());
+        }
+    }
+
+    let tls_cache: Option<Arc<TlsFrontCache>> = if config.censorship.tls_emulation {
+        let cache = Arc::new(TlsFrontCache::new(
+            &tls_domains,
+            config.censorship.fake_cert_len,
+            &config.censorship.tls_front_dir,
+        ));
+
+        let cache_clone = cache.clone();
+        let domains = tls_domains.clone();
+        let port = config.censorship.mask_port;
+        tokio::spawn(async move {
+            for domain in domains {
+                match crate::tls_front::fetcher::fetch_real_tls(
+                    &domain,
+                    port,
+                    &domain,
+                    Duration::from_secs(5),
+                )
+                .await
+                {
+                    Ok(res) => cache_clone.update_from_fetch(&domain, res).await,
+                    Err(e) => warn!(domain = %domain, error = %e, "TLS emulation fetch failed"),
+                }
+            }
+        });
+
+        Some(cache)
+    } else {
+        None
+    };
 
     // Connection concurrency limit
     let _max_connections = Arc::new(Semaphore::new(10_000));
@@ -715,6 +767,7 @@ match crate::transport::middle_proxy::fetch_proxy_secret(proxy_secret_path).awai
         let buffer_pool = buffer_pool.clone();
         let rng = rng.clone();
         let me_pool = me_pool.clone();
+        let tls_cache = tls_cache.clone();
         let ip_tracker = ip_tracker.clone();
 
         tokio::spawn(async move {
@@ -733,13 +786,14 @@ match crate::transport::middle_proxy::fetch_proxy_secret(proxy_secret_path).awai
                         let buffer_pool = buffer_pool.clone();
                         let rng = rng.clone();
                         let me_pool = me_pool.clone();
+                        let tls_cache = tls_cache.clone();
                         let ip_tracker = ip_tracker.clone();
 
                         tokio::spawn(async move {
                             if let Err(e) = crate::proxy::client::handle_client_stream(
                                 stream, fake_peer, config, stats,
                                 upstream_manager, replay_checker, buffer_pool, rng,
-                                me_pool, ip_tracker,
+                                me_pool, tls_cache, ip_tracker,
                             ).await {
                                 debug!(error = %e, "Unix socket connection error");
                             }
@@ -787,6 +841,7 @@ match crate::transport::middle_proxy::fetch_proxy_secret(proxy_secret_path).awai
         let buffer_pool = buffer_pool.clone();
         let rng = rng.clone();
         let me_pool = me_pool.clone();
+        let tls_cache = tls_cache.clone();
         let ip_tracker = ip_tracker.clone();
 
         tokio::spawn(async move {
@@ -800,6 +855,7 @@ match crate::transport::middle_proxy::fetch_proxy_secret(proxy_secret_path).awai
                         let buffer_pool = buffer_pool.clone();
                         let rng = rng.clone();
                         let me_pool = me_pool.clone();
+                        let tls_cache = tls_cache.clone();
                         let ip_tracker = ip_tracker.clone();
 
                         tokio::spawn(async move {
@@ -813,6 +869,7 @@ match crate::transport::middle_proxy::fetch_proxy_secret(proxy_secret_path).awai
                                 buffer_pool,
                                 rng,
                                 me_pool,
+                                tls_cache,
                                 ip_tracker,
                             )
                             .run()
