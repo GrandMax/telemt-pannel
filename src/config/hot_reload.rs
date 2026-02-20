@@ -159,14 +159,140 @@ pub fn spawn_config_watcher(
 
             warn_non_hot_changes(&old_cfg, &new_cfg);
 
-            // Notify log_level change (caller applies it to the tracing filter).
+            // ── Detailed diff logging ─────────────────────────────────────
+
+            // log_level
             if old_hot.log_level != new_hot.log_level {
-                info!("config reload: log_level → '{}'", new_hot.log_level);
+                info!(
+                    "config reload: log_level: '{}' → '{}'",
+                    old_hot.log_level, new_hot.log_level
+                );
                 log_tx.send(new_hot.log_level.clone()).ok();
             }
 
+            // ad_tag
+            if old_hot.ad_tag != new_hot.ad_tag {
+                info!(
+                    "config reload: ad_tag: {} → {}",
+                    old_hot.ad_tag.as_deref().unwrap_or("none"),
+                    new_hot.ad_tag.as_deref().unwrap_or("none"),
+                );
+            }
+
+            // middle_proxy_pool_size
+            if old_hot.middle_proxy_pool_size != new_hot.middle_proxy_pool_size {
+                info!(
+                    "config reload: middle_proxy_pool_size: {} → {}",
+                    old_hot.middle_proxy_pool_size, new_hot.middle_proxy_pool_size,
+                );
+            }
+
+            // me_keepalive
+            if old_hot.me_keepalive_enabled != new_hot.me_keepalive_enabled
+                || old_hot.me_keepalive_interval_secs != new_hot.me_keepalive_interval_secs
+                || old_hot.me_keepalive_jitter_secs != new_hot.me_keepalive_jitter_secs
+                || old_hot.me_keepalive_payload_random != new_hot.me_keepalive_payload_random
+            {
+                info!(
+                    "config reload: me_keepalive: enabled={} interval={}s jitter={}s random_payload={}",
+                    new_hot.me_keepalive_enabled,
+                    new_hot.me_keepalive_interval_secs,
+                    new_hot.me_keepalive_jitter_secs,
+                    new_hot.me_keepalive_payload_random,
+                );
+            }
+
+            // access.users — added / removed / changed
+            if old_hot.access.users != new_hot.access.users {
+                let added: Vec<&String> = new_hot.access.users.keys()
+                    .filter(|u| !old_hot.access.users.contains_key(*u))
+                    .collect();
+                let removed: Vec<&String> = old_hot.access.users.keys()
+                    .filter(|u| !new_hot.access.users.contains_key(*u))
+                    .collect();
+                let changed: Vec<&String> = new_hot.access.users.keys()
+                    .filter(|u| {
+                        old_hot.access.users.get(*u)
+                            .map(|old_s| old_s != &new_hot.access.users[*u])
+                            .unwrap_or(false)
+                    })
+                    .collect();
+
+                if !added.is_empty() {
+                    let names: Vec<&str> = added.iter().map(|s| s.as_str()).collect();
+                    info!("config reload: users added: [{}]", names.join(", "));
+
+                    // Print TG proxy links for each newly added user.
+                    let host = new_cfg.general.links.public_host.as_deref()
+                        .unwrap_or("YOUR_SERVER_IP");
+                    let port = new_cfg.general.links.public_port
+                        .unwrap_or(new_cfg.server.port);
+                    let tls_domain = &new_cfg.censorship.tls_domain;
+                    let mut tls_domains = vec![tls_domain.clone()];
+                    for d in &new_cfg.censorship.tls_domains {
+                        if !tls_domains.contains(d) { tls_domains.push(d.clone()); }
+                    }
+
+                    for user in &added {
+                        if let Some(secret) = new_hot.access.users.get(*user) {
+                            info!(target: "telemt::links", "--- New user: {} ---", user);
+                            if new_cfg.general.modes.classic {
+                                info!(
+                                    target: "telemt::links",
+                                    "  Classic: tg://proxy?server={}&port={}&secret={}",
+                                    host, port, secret
+                                );
+                            }
+                            if new_cfg.general.modes.secure {
+                                info!(
+                                    target: "telemt::links",
+                                    "  DD:      tg://proxy?server={}&port={}&secret=dd{}",
+                                    host, port, secret
+                                );
+                            }
+                            if new_cfg.general.modes.tls {
+                                for domain in &tls_domains {
+                                    let domain_hex = hex::encode(domain.as_bytes());
+                                    info!(
+                                        target: "telemt::links",
+                                        "  EE-TLS:  tg://proxy?server={}&port={}&secret=ee{}{}",
+                                        host, port, secret, domain_hex
+                                    );
+                                }
+                            }
+                            info!(target: "telemt::links", "--------------------");
+                        }
+                    }
+                }
+                if !removed.is_empty() {
+                    let names: Vec<&str> = removed.iter().map(|s| s.as_str()).collect();
+                    info!("config reload: users removed: [{}]", names.join(", "));
+                }
+                if !changed.is_empty() {
+                    let names: Vec<&str> = changed.iter().map(|s| s.as_str()).collect();
+                    info!("config reload: users secret changed: [{}]", names.join(", "));
+                }
+            }
+
+            // access quotas / limits
+            if old_hot.access.user_max_tcp_conns != new_hot.access.user_max_tcp_conns {
+                info!("config reload: user_max_tcp_conns updated ({} entries)",
+                    new_hot.access.user_max_tcp_conns.len());
+            }
+            if old_hot.access.user_expirations != new_hot.access.user_expirations {
+                info!("config reload: user_expirations updated ({} entries)",
+                    new_hot.access.user_expirations.len());
+            }
+            if old_hot.access.user_data_quota != new_hot.access.user_data_quota {
+                info!("config reload: user_data_quota updated ({} entries)",
+                    new_hot.access.user_data_quota.len());
+            }
+            if old_hot.access.user_max_unique_ips != new_hot.access.user_max_unique_ips {
+                info!("config reload: user_max_unique_ips updated ({} entries)",
+                    new_hot.access.user_max_unique_ips.len());
+            }
+
             // Broadcast the new config snapshot.
-            info!("config reload: hot changes applied");
             config_tx.send(Arc::new(new_cfg)).ok();
         }
     });
