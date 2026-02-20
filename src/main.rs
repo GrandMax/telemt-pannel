@@ -27,6 +27,7 @@ mod tls_front;
 mod util;
 
 use crate::config::{LogLevel, ProxyConfig};
+use crate::config::hot_reload::spawn_config_watcher;
 use crate::crypto::SecureRandom;
 use crate::ip_tracker::UserIpTracker;
 use crate::network::probe::{decide_network_capabilities, log_probe_result, run_probe};
@@ -656,6 +657,19 @@ match crate::transport::middle_proxy::fetch_proxy_secret(proxy_secret_path).awai
         detected_ip_v4, detected_ip_v6
     );
 
+    // ── Hot-reload watcher ────────────────────────────────────────────────
+    // Uses inotify to detect file changes instantly (SIGHUP also works).
+    // detected_ip_v4/v6 are passed so newly added users get correct TG links.
+    let (config_rx, mut log_level_rx): (
+        tokio::sync::watch::Receiver<Arc<ProxyConfig>>,
+        tokio::sync::watch::Receiver<LogLevel>,
+    ) = spawn_config_watcher(
+        std::path::PathBuf::from(&config_path),
+        config.clone(),
+        detected_ip_v4,
+        detected_ip_v6,
+    );
+
     let mut listeners = Vec::new();
 
     for listener_conf in &config.server.listeners {
@@ -760,7 +774,7 @@ match crate::transport::middle_proxy::fetch_proxy_secret(proxy_secret_path).awai
 
         has_unix_listener = true;
 
-        let config = config.clone();
+        let mut config_rx_unix: tokio::sync::watch::Receiver<Arc<ProxyConfig>> = config_rx.clone();
         let stats = stats.clone();
         let upstream_manager = upstream_manager.clone();
         let replay_checker = replay_checker.clone();
@@ -779,7 +793,7 @@ match crate::transport::middle_proxy::fetch_proxy_secret(proxy_secret_path).awai
                         let conn_id = unix_conn_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         let fake_peer = SocketAddr::from(([127, 0, 0, 1], (conn_id % 65535) as u16));
 
-                        let config = config.clone();
+                        let config = config_rx_unix.borrow_and_update().clone();
                         let stats = stats.clone();
                         let upstream_manager = upstream_manager.clone();
                         let replay_checker = replay_checker.clone();
@@ -825,6 +839,20 @@ match crate::transport::middle_proxy::fetch_proxy_secret(proxy_secret_path).awai
         .reload(runtime_filter)
         .expect("Failed to switch log filter");
 
+    // Apply log_level changes from hot-reload to the tracing filter.
+    tokio::spawn(async move {
+        loop {
+            if log_level_rx.changed().await.is_err() {
+                break;
+            }
+            let level = log_level_rx.borrow_and_update().clone();
+            let new_filter = tracing_subscriber::EnvFilter::new(level.to_filter_str());
+            if let Err(e) = filter_handle.reload(new_filter) {
+                tracing::error!("config reload: failed to update log filter: {}", e);
+            }
+        }
+    });
+
     if let Some(port) = config.server.metrics_port {
         let stats = stats.clone();
         let whitelist = config.server.metrics_whitelist.clone();
@@ -834,7 +862,7 @@ match crate::transport::middle_proxy::fetch_proxy_secret(proxy_secret_path).awai
     }
 
     for listener in listeners {
-        let config = config.clone();
+        let mut config_rx: tokio::sync::watch::Receiver<Arc<ProxyConfig>> = config_rx.clone();
         let stats = stats.clone();
         let upstream_manager = upstream_manager.clone();
         let replay_checker = replay_checker.clone();
@@ -848,7 +876,7 @@ match crate::transport::middle_proxy::fetch_proxy_secret(proxy_secret_path).awai
             loop {
                 match listener.accept().await {
                     Ok((stream, peer_addr)) => {
-                        let config = config.clone();
+                        let config = config_rx.borrow_and_update().clone();
                         let stats = stats.clone();
                         let upstream_manager = upstream_manager.clone();
                         let replay_checker = replay_checker.clone();

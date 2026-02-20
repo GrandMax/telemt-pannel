@@ -412,7 +412,7 @@ impl Default for AntiCensorshipConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AccessConfig {
     #[serde(default)]
     pub users: HashMap<String, String>,
