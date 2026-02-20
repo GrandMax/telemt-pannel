@@ -1,5 +1,5 @@
 use std::convert::Infallible;
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use http_body_util::Full;
@@ -7,12 +7,13 @@ use hyper::body::Bytes;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
+use ipnetwork::IpNetwork;
 use tokio::net::TcpListener;
 use tracing::{info, warn, debug};
 
 use crate::stats::Stats;
 
-pub async fn serve(port: u16, stats: Arc<Stats>, whitelist: Vec<IpAddr>) {
+pub async fn serve(port: u16, stats: Arc<Stats>, whitelist: Vec<IpNetwork>) {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = match TcpListener::bind(addr).await {
         Ok(l) => l,
@@ -32,7 +33,7 @@ pub async fn serve(port: u16, stats: Arc<Stats>, whitelist: Vec<IpAddr>) {
             }
         };
 
-        if !whitelist.is_empty() && !whitelist.contains(&peer.ip()) {
+        if !whitelist.is_empty() && !whitelist.iter().any(|net| net.contains(peer.ip())) {
             debug!(peer = %peer, "Metrics request denied by whitelist");
             continue;
         }
