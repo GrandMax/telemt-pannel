@@ -138,7 +138,7 @@ pub fn resolve_interface_ip(name: &str, want_ipv6: bool) -> Option<IpAddr> {
                         }
                     } else if let Some(v6) = address.as_sockaddr_in6() {
                         if want_ipv6 {
-                            return Some(IpAddr::V6(v6.ip().to_std()));
+                            return Some(IpAddr::V6(v6.ip().clone()));
                         }
                     }
                 }

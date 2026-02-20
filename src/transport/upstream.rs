@@ -609,7 +609,7 @@ impl UpstreamManager {
                             }
                             let result = tokio::time::timeout(
                                 Duration::from_secs(DC_PING_TIMEOUT_SECS),
-                                self.ping_single_dc(&upstream_config, addr)
+                                self.ping_single_dc(&upstream_config, Some(bind_rr.clone()), addr)
                             ).await;
 
                             let ping_result = match result {
