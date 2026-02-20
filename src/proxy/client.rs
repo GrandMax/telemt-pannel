@@ -31,6 +31,7 @@ use crate::stats::{ReplayChecker, Stats};
 use crate::stream::{BufferPool, CryptoReader, CryptoWriter};
 use crate::transport::middle_proxy::MePool;
 use crate::transport::{UpstreamManager, configure_client_socket, parse_proxy_protocol};
+use crate::tls_front::TlsFrontCache;
 
 use crate::proxy::direct_relay::handle_via_direct;
 use crate::proxy::handshake::{HandshakeSuccess, handle_mtproto_handshake, handle_tls_handshake};
@@ -47,6 +48,7 @@ pub async fn handle_client_stream<S>(
     buffer_pool: Arc<BufferPool>,
     rng: Arc<SecureRandom>,
     me_pool: Option<Arc<MePool>>,
+    tls_cache: Option<Arc<TlsFrontCache>>,
     ip_tracker: Arc<UserIpTracker>,
 ) -> Result<()>
 where
@@ -111,7 +113,7 @@ where
 
             let (mut tls_reader, tls_writer, _tls_user) = match handle_tls_handshake(
                 &handshake, read_half, write_half, real_peer,
-                &config, &replay_checker, &rng,
+                &config, &replay_checker, &rng, tls_cache.clone(),
             ).await {
                 HandshakeResult::Success(result) => result,
                 HandshakeResult::BadClient { reader, writer } => {
@@ -224,6 +226,7 @@ pub struct RunningClientHandler {
     buffer_pool: Arc<BufferPool>,
     rng: Arc<SecureRandom>,
     me_pool: Option<Arc<MePool>>,
+    tls_cache: Option<Arc<TlsFrontCache>>,
     ip_tracker: Arc<UserIpTracker>,
 }
 
@@ -238,6 +241,7 @@ impl ClientHandler {
         buffer_pool: Arc<BufferPool>,
         rng: Arc<SecureRandom>,
         me_pool: Option<Arc<MePool>>,
+        tls_cache: Option<Arc<TlsFrontCache>>,
         ip_tracker: Arc<UserIpTracker>,
     ) -> RunningClientHandler {
         RunningClientHandler {
@@ -250,6 +254,7 @@ impl ClientHandler {
             buffer_pool,
             rng,
             me_pool,
+            tls_cache,
             ip_tracker,
         }
     }
@@ -367,6 +372,7 @@ impl RunningClientHandler {
             &config,
             &replay_checker,
             &self.rng,
+            self.tls_cache.clone(),
         )
         .await
         {

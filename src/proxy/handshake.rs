@@ -1,6 +1,7 @@
 //! MTProto Handshake
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tracing::{debug, warn, trace, info};
 use zeroize::Zeroize;
@@ -12,6 +13,8 @@ use crate::stream::{FakeTlsReader, FakeTlsWriter, CryptoReader, CryptoWriter};
 use crate::error::{ProxyError, HandshakeResult};
 use crate::stats::ReplayChecker;
 use crate::config::ProxyConfig;
+use crate::tls_front::{TlsFrontCache, emulator};
+use crate::tls_front::types::CachedTlsData;
 
 /// Result of successful handshake
 ///

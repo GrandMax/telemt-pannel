@@ -23,6 +23,7 @@ mod proxy;
 mod stats;
 mod stream;
 mod transport;
+mod tls_front;
 mod util;
 
 use crate::config::{LogLevel, ProxyConfig};
