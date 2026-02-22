@@ -41,7 +41,7 @@ pub fn configure_tcp_socket(
 pub fn configure_client_socket(
     stream: &TcpStream,
     keepalive_secs: u64,
-    _ack_timeout_secs: u64,
+    #[allow(unused_variables)] ack_timeout_secs: u64, // used only on Linux (TCP_USER_TIMEOUT)
 ) -> Result<()> {
     let socket = socket2::SockRef::from(stream);
     
