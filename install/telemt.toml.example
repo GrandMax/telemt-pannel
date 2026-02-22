@@ -20,7 +20,7 @@ listen_addr_ipv4 = "0.0.0.0"
 listen_addr_ipv6 = "::"
 
 [censorship]
-tls_domain = "1c.ru"
+tls_domain = "pikabu.ru"
 mask = true
 mask_port = 443
 fake_cert_len = 2048

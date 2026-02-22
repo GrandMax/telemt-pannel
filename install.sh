@@ -7,7 +7,7 @@ set -e
 
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR="${INSTALL_DIR:-$(pwd)/mtproxy-data}"
-FAKE_DOMAIN="${FAKE_DOMAIN:-1c.ru}"
+FAKE_DOMAIN="${FAKE_DOMAIN:-pikabu.ru}"
 TELEMT_INTERNAL_PORT="${TELEMT_INTERNAL_PORT:-1234}"
 LISTEN_PORT="${LISTEN_PORT:-443}"
 TELEMT_PREBUILT_IMAGE="${TELEMT_PREBUILT_IMAGE:-grandmax/telemt-pannel:latest}"
@@ -93,7 +93,7 @@ prompt_install_dir() {
 	if [[ -t 0 ]]; then
 		local default="${INSTALL_DIR}"
 		echo -n "Каталог установки [${default}]: "
-		read -r input
+		read -r input || true
 		[[ -n "$input" ]] && INSTALL_DIR="$input"
 	fi
 }
@@ -106,7 +106,7 @@ prompt_port() {
 		while true; do
 			if [[ -t 0 ]]; then
 				echo -n "Введите порт [${suggested}]: "
-				read -r input
+				read -r input || true
 				[[ -z "$input" ]] && input=$suggested
 			else
 				# Non-interactive: respect explicit LISTEN_PORT from env
@@ -133,14 +133,14 @@ prompt_port() {
 	else
 		if [[ -t 0 ]]; then
 			echo -n "Порт для прокси [443]: "
-			read -r input
+			read -r input || true
 			[[ -n "$input" ]] && input="$input" || input=443
 			while true; do
 				if [[ "$input" =~ ^[0-9]+$ ]] && (( input >= 1 && input <= 65535 )); then
 					if is_port_in_use "$input"; then
 						warn "Порт ${input} занят, выберите другой."
 						echo -n "Введите порт: "
-						read -r input
+						read -r input || true
 					else
 						LISTEN_PORT=$input
 						return
@@ -148,7 +148,7 @@ prompt_port() {
 				else
 					warn "Введите число от 1 до 65535."
 					echo -n "Введите порт [443]: "
-					read -r input
+					read -r input || true
 					[[ -z "$input" ]] && input=443
 				fi
 			done
@@ -163,7 +163,7 @@ prompt_fake_domain() {
 	fi
 	if [[ -t 0 ]]; then
 		echo -n "Домен для маскировки Fake TLS (SNI) [${FAKE_DOMAIN}]: "
-		read -r input
+		read -r input || true
 		[[ -n "$input" ]] && FAKE_DOMAIN="$input"
 	fi
 }
@@ -176,7 +176,7 @@ confirm_install() {
 	echo "  Порт:    ${LISTEN_PORT}"
 	echo "  Домен:   ${FAKE_DOMAIN}"
 	echo -n "Продолжить? [Y/n] "
-	read -r ans
+	read -r ans || true
 	[[ -z "$ans" ]] && return 0
 	[[ "${ans,,}" == "y" || "${ans,,}" == "yes" ]] && return 0
 	info "Установка отменена."
@@ -191,7 +191,7 @@ prompt_image_source() {
 		echo "  1) Собрать из исходников (локально)"
 		echo "  2) Скачать готовый образ (${TELEMT_PREBUILT_IMAGE})"
 		echo -n "Выбор [1]: "
-		read -r input
+		read -r input || true
 		input="${input%% *}"
 		if [[ "$input" == "2" ]]; then
 			TELEMT_IMAGE_SOURCE=prebuilt
@@ -230,7 +230,7 @@ copy_and_configure() {
 	SECRET=$(generate_secret)
 
 	sed -e "s/ПОДСТАВЬТЕ_32_СИМВОЛА_HEX/${SECRET}/g" \
-	    -e "s/tls_domain = \"1c.ru\"/tls_domain = \"${FAKE_DOMAIN}\"/g" \
+	    -e "s/tls_domain = \"pikabu.ru\"/tls_domain = \"${FAKE_DOMAIN}\"/g" \
 	    -e "s/TELEMT_PORT_PLACEHOLDER/${TELEMT_INTERNAL_PORT}/g" \
 	    "${INSTALL_DIR}/telemt.toml.example" > "${INSTALL_DIR}/telemt.toml"
 	rm -f "${INSTALL_DIR}/telemt.toml.example"
@@ -369,7 +369,7 @@ prompt_install_dir_existing() {
 	if [[ -t 0 ]]; then
 		while true; do
 			echo -n "Каталог установки [${default}]: "
-			read -r input
+			read -r input || true
 			[[ -z "$input" ]] && input="$default"
 			local dir
 			dir="$(resolve_install_dir "$input")"
@@ -402,7 +402,7 @@ show_menu() {
 		echo "  5) Выход"
 		echo ""
 		echo -n "Выберите действие [1-5]: "
-		read -r choice
+		read -r choice || true
 		choice="${choice%% *}"
 		case "$choice" in
 			1) MENU_CHOICE=1; return 0 ;;
@@ -442,7 +442,7 @@ cmd_config() {
 	if [[ -z "$new_domain" ]]; then
 		if [[ -t 0 ]]; then
 			echo -n "Новый домен для Fake TLS (tls_domain) [${current_domain}]: "
-			read -r new_domain
+			read -r new_domain || true
 			[[ -z "$new_domain" ]] && new_domain="$current_domain"
 		else
 			err "Без TTY укажите домен через env FAKE_DOMAIN или аргумент: install.sh config --sni example.com"
@@ -501,7 +501,7 @@ cmd_uninstall() {
 
 	if [[ -z "$force" ]] && [[ -t 0 ]]; then
 		echo -n "Удалить установку в ${dir}? [y/N] "
-		read -r ans
+		read -r ans || true
 		[[ "${ans,,}" != "y" && "${ans,,}" != "yes" ]] && exit 0
 	fi
 
