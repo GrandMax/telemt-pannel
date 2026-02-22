@@ -159,10 +159,10 @@ pub const MAX_TLS_CHUNK_SIZE: usize = 16384 + 256;
 /// Generate padding length for Secure Intermediate protocol.
 /// Total (data + padding) must not be divisible by 4 per MTProto spec.
 pub fn secure_padding_len(data_len: usize, rng: &SecureRandom) -> usize {
-    if data_len % 4 == 0 {
-        (rng.range(3) + 1) as usize // 1-3
+    if data_len.is_multiple_of(4) {
+        rng.range(3) + 1 // 1-3
     } else {
-        rng.range(4) as usize // 0-3
+        rng.range(4) // 0-3
     }
 }
 
@@ -215,7 +215,6 @@ pub static RESERVED_NONCE_CONTINUES: &[[u8; 4]] = &[
 // ============= RPC Constants (for Middle Proxy) =============
 
 /// RPC Proxy Request
-
 /// RPC Flags (from Erlang mtp_rpc.erl)
 pub const RPC_FLAG_NOT_ENCRYPTED: u32 = 0x2;
 pub const RPC_FLAG_HAS_AD_TAG: u32    = 0x8;

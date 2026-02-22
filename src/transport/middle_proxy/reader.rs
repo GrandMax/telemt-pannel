@@ -17,6 +17,7 @@ use crate::protocol::constants::*;
 use super::codec::WriterCommand;
 use super::{ConnRegistry, MeResponse};
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn reader_loop(
     mut rd: tokio::io::ReadHalf<TcpStream>,
     dk: [u8; 32],

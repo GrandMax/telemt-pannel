@@ -7,6 +7,9 @@ use crate::error::ProxyError;
 
 use super::MePool;
 
+/// (family, dc, addrs) for grouping ping targets
+type GroupedDcAddrs = (MePingFamily, i32, Vec<(IpAddr, u16)>);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MePingFamily {
     V4,
@@ -104,7 +107,7 @@ pub async fn run_me_ping(pool: &Arc<MePool>, rng: &SecureRandom) -> Vec<MePingRe
         HashMap::new()
     };
 
-    let mut grouped: Vec<(MePingFamily, i32, Vec<(IpAddr, u16)>)> = Vec::new();
+    let mut grouped: Vec<GroupedDcAddrs> = Vec::new();
     for (dc, addrs) in v4_map {
         grouped.push((MePingFamily::V4, dc, addrs));
     }

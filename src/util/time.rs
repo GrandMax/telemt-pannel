@@ -62,13 +62,13 @@ pub async fn check_time_sync() -> Option<TimeSyncResult> {
 /// Background time sync task
 pub async fn time_sync_task(check_interval: Duration) -> ! {
     loop {
-        if let Some(result) = check_time_sync().await {
-            if result.is_skewed {
-                error!(
-                    "System clock is off by {} seconds. Please sync your clock.",
-                    result.skew_secs
-                );
-            }
+        if let Some(result) = check_time_sync().await
+            && result.is_skewed
+        {
+            error!(
+                "System clock is off by {} seconds. Please sync your clock.",
+                result.skew_secs
+            );
         }
         
         tokio::time::sleep(check_interval).await;

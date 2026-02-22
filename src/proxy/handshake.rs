@@ -50,6 +50,7 @@ impl Drop for HandshakeSuccess {
 }
 
 /// Handle fake TLS handshake
+#[allow(clippy::too_many_arguments)]
 pub async fn handle_tls_handshake<R, W>(
     handshake: &[u8],
     reader: R,
@@ -199,6 +200,7 @@ where
 }
 
 /// Handle MTProto obfuscation handshake
+#[allow(clippy::too_many_arguments)]
 pub async fn handle_mtproto_handshake<R, W>(
     handshake: &[u8; HANDSHAKE_LEN],
     reader: R,
@@ -313,6 +315,7 @@ where
 }
 
 /// Generate nonce for Telegram connection
+#[allow(clippy::too_many_arguments)]
 pub fn generate_tg_nonce(
     proto_tag: ProtoTag, 
     dc_idx: i16,

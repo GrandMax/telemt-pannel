@@ -39,6 +39,7 @@ use crate::proxy::handshake::{HandshakeSuccess, handle_mtproto_handshake, handle
 use crate::proxy::masking::handle_bad_client;
 use crate::proxy::middle_relay::handle_via_middle_proxy;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn handle_client_stream<S>(
     mut stream: S,
     peer: SocketAddr,
@@ -234,6 +235,9 @@ pub struct RunningClientHandler {
 }
 
 impl ClientHandler {
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::wrong_self_convention)] // returns RunningClientHandler for builder-style use
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         stream: TcpStream,
         peer: SocketAddr,
@@ -502,8 +506,9 @@ impl RunningClientHandler {
 
     /// Main dispatch after successful handshake.
     /// Two modes:
-    ///   - Direct: TCP relay to TG DC (existing behavior)  
+    ///   - Direct: TCP relay to TG DC (existing behavior)
     ///   - Middle Proxy: RPC multiplex through ME pool (new — supports CDN DCs)
+    #[allow(clippy::too_many_arguments)]
     async fn handle_authenticated_static<R, W>(
         client_reader: CryptoReader<R>,
         client_writer: CryptoWriter<W>,
@@ -594,12 +599,12 @@ impl RunningClientHandler {
         peer_addr: SocketAddr,
         ip_tracker: &UserIpTracker,
     ) -> Result<()> {
-        if let Some(expiration) = config.access.user_expirations.get(user) {
-            if chrono::Utc::now() > *expiration {
-                return Err(ProxyError::UserExpired {
-                    user: user.to_string(),
-                });
-            }
+        if let Some(expiration) = config.access.user_expirations.get(user)
+            && chrono::Utc::now() > *expiration
+        {
+            return Err(ProxyError::UserExpired {
+                user: user.to_string(),
+            });
         }
 
         // IP limit check
@@ -615,20 +620,20 @@ impl RunningClientHandler {
             });
         }
 
-        if let Some(limit) = config.access.user_max_tcp_conns.get(user) {
-            if stats.get_user_curr_connects(user) >= *limit as u64 {
-                return Err(ProxyError::ConnectionLimitExceeded {
-                    user: user.to_string(),
-                });
-            }
+        if let Some(limit) = config.access.user_max_tcp_conns.get(user)
+            && stats.get_user_curr_connects(user) >= *limit as u64
+        {
+            return Err(ProxyError::ConnectionLimitExceeded {
+                user: user.to_string(),
+            });
         }
 
-        if let Some(quota) = config.access.user_data_quota.get(user) {
-            if stats.get_user_total_octets(user) >= *quota {
-                return Err(ProxyError::DataQuotaExceeded {
-                    user: user.to_string(),
-                });
-            }
+        if let Some(quota) = config.access.user_data_quota.get(user)
+            && stats.get_user_total_octets(user) >= *quota
+        {
+            return Err(ProxyError::DataQuotaExceeded {
+                user: user.to_string(),
+            });
         }
 
         Ok(())

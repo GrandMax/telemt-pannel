@@ -135,7 +135,7 @@ fn encode_abridged(frame: &Frame, dst: &mut BytesMut) -> io::Result<()> {
     let data = &frame.data;
     
     // Validate alignment
-    if data.len() % 4 != 0 {
+    if !data.len().is_multiple_of(4) {
         return Err(Error::new(
             ErrorKind::InvalidInput,
             format!("abridged frame must be 4-byte aligned, got {} bytes", data.len())
@@ -304,12 +304,12 @@ fn encode_secure(frame: &Frame, dst: &mut BytesMut, rng: &SecureRandom) -> io::R
     }
     
     // Generate padding to make length not divisible by 4
-    let padding_len = if data.len() % 4 == 0 {
+    let padding_len = if data.len().is_multiple_of(4) {
         // Add 1-3 bytes to make it non-aligned
-        (rng.range(3) + 1) as usize
+        rng.range(3) + 1
     } else {
         // Already non-aligned, can add 0-3
-        rng.range(4) as usize
+        rng.range(4)
     };
     
     let total_len = data.len() + padding_len;

@@ -1,7 +1,11 @@
-# Статический анализ безопасности (CodeQL) для Rust и Actions. Запуск только вручную: Actions → CodeQL Advanced → Run workflow
+# Статический анализ безопасности (CodeQL) для Rust и Actions. Запуск при пуше в main и вручную.
 name: "CodeQL Advanced"
 
 on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:

@@ -41,7 +41,7 @@ pub fn configure_tcp_socket(
 pub fn configure_client_socket(
     stream: &TcpStream,
     keepalive_secs: u64,
-    ack_timeout_secs: u64,
+    _ack_timeout_secs: u64,
 ) -> Result<()> {
     let socket = socket2::SockRef::from(stream);
     
@@ -130,17 +130,17 @@ pub fn resolve_interface_ip(name: &str, want_ipv6: bool) -> Option<IpAddr> {
 
     if let Ok(addrs) = getifaddrs() {
         for iface in addrs {
-            if iface.interface_name == name {
-                if let Some(address) = iface.address {
-                    if let Some(v4) = address.as_sockaddr_in() {
-                        if !want_ipv6 {
-                            return Some(IpAddr::V4(v4.ip()));
-                        }
-                    } else if let Some(v6) = address.as_sockaddr_in6() {
-                        if want_ipv6 {
-                            return Some(IpAddr::V6(v6.ip().clone()));
-                        }
+            if iface.interface_name == name
+                && let Some(address) = iface.address
+            {
+                if let Some(v4) = address.as_sockaddr_in() {
+                    if !want_ipv6 {
+                        return Some(IpAddr::V4(v4.ip()));
                     }
+                } else if let Some(v6) = address.as_sockaddr_in6()
+                    && want_ipv6
+                {
+                    return Some(IpAddr::V6(v6.ip()));
                 }
             }
         }

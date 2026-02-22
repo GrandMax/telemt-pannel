@@ -301,7 +301,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 match crate::transport::middle_proxy::fetch_proxy_secret(proxy_secret_path).await {
     Ok(proxy_secret) => {
         info!(
-            secret_len = proxy_secret.len() as usize,  // ← ЯВНЫЙ ТИП usize
+            secret_len = proxy_secret.len(),
             key_sig = format_args!(
                 "0x{:08x}",
                 if proxy_secret.len() >= 4 {
@@ -603,14 +603,12 @@ match crate::transport::middle_proxy::fetch_proxy_secret(proxy_secret_path).awai
 			} else {
 				info!("  IPv4 in use / IPv6 is fallback");
 			}
-		} else {
-			if v6_works && !v4_works {
-				info!("  IPv6 only / IPv4 unavailable)");
-			} else if v4_works && !v6_works {
-				info!("  IPv4 only / IPv6 unavailable)");
-			} else if !v6_works && !v4_works {
-				info!("  No DC connectivity");
-			}
+		} else if v6_works && !v4_works {
+			info!("  IPv6 only / IPv4 unavailable)");
+		} else if v4_works && !v6_works {
+			info!("  IPv4 only / IPv6 unavailable)");
+		} else if !v6_works && !v4_works {
+			info!("  No DC connectivity");
 		}
 
 		info!("  via {}", upstream_result.upstream_name);

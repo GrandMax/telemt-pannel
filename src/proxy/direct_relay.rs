@@ -17,6 +17,7 @@ use crate::stats::Stats;
 use crate::stream::{BufferPool, CryptoReader, CryptoWriter};
 use crate::transport::UpstreamManager;
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn handle_via_direct<R, W>(
     client_reader: CryptoReader<R>,
     client_writer: CryptoWriter<W>,
@@ -99,12 +100,12 @@ fn get_dc_addr_static(dc_idx: i16, config: &ProxyConfig) -> Result<SocketAddr> {
             }
         }
 
-        if let Some(addr) = parsed
+        let addr = parsed
             .iter()
             .find(|a| a.is_ipv6() == prefer_v6)
             .or_else(|| parsed.first())
-            .copied()
-        {
+            .copied();
+        if let Some(addr) = addr {
             debug!(dc_idx = dc_idx, addr = %addr, count = parsed.len(), "Using DC override from config");
             return Ok(addr);
         }
@@ -118,10 +119,10 @@ fn get_dc_addr_static(dc_idx: i16, config: &ProxyConfig) -> Result<SocketAddr> {
     // Unknown DC requested by client without override: log and fall back.
     if !config.dc_overrides.contains_key(&dc_key) {
         warn!(dc_idx = dc_idx, "Requested non-standard DC with no override; falling back to default cluster");
-        if let Some(path) = &config.general.unknown_dc_log_path {
-            if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
-                let _ = writeln!(file, "dc_idx={dc_idx}");
-            }
+        if let Some(path) = &config.general.unknown_dc_log_path
+            && let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path)
+        {
+            let _ = writeln!(file, "dc_idx={dc_idx}");
         }
     }
 

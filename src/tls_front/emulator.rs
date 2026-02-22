@@ -12,7 +12,7 @@ fn jitter_and_clamp_sizes(sizes: &[usize], rng: &SecureRandom) -> Vec<usize> {
     sizes
         .iter()
         .map(|&size| {
-            let base = size.max(MIN_APP_DATA).min(MAX_APP_DATA);
+            let base = size.clamp(MIN_APP_DATA, MAX_APP_DATA);
             let jitter_range = ((base as f64) * 0.03).round() as i64;
             if jitter_range == 0 {
                 return base;

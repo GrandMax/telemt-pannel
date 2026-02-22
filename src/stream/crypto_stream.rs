@@ -45,7 +45,7 @@
 //! - when upstream is Pending but pending still has room: accept `to_accept` bytes and
 //!   encrypt+append ciphertext directly into pending (in-place encryption of appended range)
 
-//! Encrypted stream wrappers using AES-CTR
+//!   Encrypted stream wrappers using AES-CTR
 //!
 //! This module provides stateful async stream wrappers that handle
 //! encryption/decryption with proper partial read/write handling.
@@ -151,9 +151,9 @@ impl<R> CryptoReader<R> {
     fn take_poison_error(&mut self) -> io::Error {
         match &mut self.state {
             CryptoReaderState::Poisoned { error } => error.take().unwrap_or_else(|| {
-                io::Error::new(ErrorKind::Other, "stream previously poisoned")
+                io::Error::other("stream previously poisoned")
             }),
-            _ => io::Error::new(ErrorKind::Other, "stream not poisoned"),
+            _ => io::Error::other("stream not poisoned"),
         }
     }
 }
@@ -166,66 +166,64 @@ impl<R: AsyncRead + Unpin> AsyncRead for CryptoReader<R> {
     ) -> Poll<Result<()>> {
         let this = self.get_mut();
 
-        loop {
-            match &mut this.state {
+        match &mut this.state {
                 CryptoReaderState::Poisoned { .. } => {
                     let err = this.take_poison_error();
-                    return Poll::Ready(Err(err));
+                    Poll::Ready(Err(err))
                 }
 
                 CryptoReaderState::Yielding { buffer } => {
                     if buf.remaining() == 0 {
-                        return Poll::Ready(Ok(()));
+                        Poll::Ready(Ok(()))
+                    } else {
+                        let to_copy = buffer.remaining().min(buf.remaining());
+                        let dst = buf.initialize_unfilled_to(to_copy);
+                        let copied = buffer.copy_to(dst);
+                        buf.advance(copied);
+
+                        if buffer.is_empty() {
+                            this.state = CryptoReaderState::Idle;
+                        }
+
+                        Poll::Ready(Ok(()))
                     }
-
-                    let to_copy = buffer.remaining().min(buf.remaining());
-                    let dst = buf.initialize_unfilled_to(to_copy);
-                    let copied = buffer.copy_to(dst);
-                    buf.advance(copied);
-
-                    if buffer.is_empty() {
-                        this.state = CryptoReaderState::Idle;
-                    }
-
-                    return Poll::Ready(Ok(()));
                 }
 
                 CryptoReaderState::Idle => {
                     if buf.remaining() == 0 {
-                        return Poll::Ready(Ok(()));
-                    }
+                        Poll::Ready(Ok(()))
+                    } else {
+                        // Read directly into caller buffer, decrypt in-place for the bytes read.
+                        let before = buf.filled().len();
 
-                    // Read directly into caller buffer, decrypt in-place for the bytes read.
-                    let before = buf.filled().len();
+                        match Pin::new(&mut this.upstream).poll_read(cx, buf) {
+                            Poll::Pending => Poll::Pending,
 
-                    match Pin::new(&mut this.upstream).poll_read(cx, buf) {
-                        Poll::Pending => return Poll::Pending,
-
-                        Poll::Ready(Err(e)) => {
-                            this.poison(io::Error::new(e.kind(), e.to_string()));
-                            return Poll::Ready(Err(e));
-                        }
-
-                        Poll::Ready(Ok(())) => {
-                            let after = buf.filled().len();
-                            let bytes_read = after - before;
-
-                            if bytes_read == 0 {
-                                // EOF
-                                return Poll::Ready(Ok(()));
+                            Poll::Ready(Err(e)) => {
+                                this.poison(io::Error::new(e.kind(), e.to_string()));
+                                Poll::Ready(Err(e))
                             }
 
-                            let filled = buf.filled_mut();
-                            this.decryptor.apply(&mut filled[before..after]);
+                            Poll::Ready(Ok(())) => {
+                                let after = buf.filled().len();
+                                let bytes_read = after - before;
 
-                            trace!(bytes_read, state = this.state_name(), "CryptoReader decrypted chunk");
+                                if bytes_read == 0 {
+                                    // EOF
+                                    Poll::Ready(Ok(()))
+                                } else {
+                                    let filled = buf.filled_mut();
+                                    this.decryptor.apply(&mut filled[before..after]);
 
-                            return Poll::Ready(Ok(()));
+                                    trace!(bytes_read, state = this.state_name(), "CryptoReader decrypted chunk");
+
+                                    Poll::Ready(Ok(()))
+                                }
+                            }
                         }
                     }
                 }
             }
-        }
     }
 }
 
@@ -483,14 +481,14 @@ impl<W> CryptoWriter<W> {
     fn take_poison_error(&mut self) -> io::Error {
         match &mut self.state {
             CryptoWriterState::Poisoned { error } => error.take().unwrap_or_else(|| {
-                io::Error::new(ErrorKind::Other, "stream previously poisoned")
+                io::Error::other("stream previously poisoned")
             }),
-            _ => io::Error::new(ErrorKind::Other, "stream not poisoned"),
+            _ => io::Error::other("stream not poisoned"),
         }
     }
 
     /// Ensure we are in Flushing state and return mutable pending buffer.
-    fn ensure_pending<'a>(state: &'a mut CryptoWriterState, max_pending: usize) -> &'a mut PendingCiphertext {
+    fn ensure_pending(state: &mut CryptoWriterState, max_pending: usize) -> &mut PendingCiphertext {
         if matches!(state, CryptoWriterState::Idle) {
             *state = CryptoWriterState::Flushing {
                 pending: PendingCiphertext::new(max_pending),

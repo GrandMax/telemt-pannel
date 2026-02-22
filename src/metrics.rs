@@ -137,6 +137,8 @@ fn render_metrics(stats: &Stats) -> String {
 
 #[cfg(test)]
 mod tests {
+    use http_body_util::BodyExt;
+
     use super::*;
 
     #[test]

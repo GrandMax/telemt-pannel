@@ -19,12 +19,12 @@ const MASK_BUFFER_SIZE: usize = 8192;
 /// Detect client type based on initial data
 fn detect_client_type(data: &[u8]) -> &'static str {
     // Check for HTTP request
-    if data.len() > 4 {
-        if data.starts_with(b"GET ") || data.starts_with(b"POST") ||
-           data.starts_with(b"HEAD") || data.starts_with(b"PUT ") ||
-           data.starts_with(b"DELETE") || data.starts_with(b"OPTIONS") {
-            return "HTTP";
-        }
+    if data.len() > 4
+        && (data.starts_with(b"GET ") || data.starts_with(b"POST")
+            || data.starts_with(b"HEAD") || data.starts_with(b"PUT ")
+            || data.starts_with(b"DELETE") || data.starts_with(b"OPTIONS"))
+    {
+        return "HTTP";
     }
 
     // Check for TLS ClientHello (0x16 = handshake, 0x03 0x01-0x03 = TLS version)

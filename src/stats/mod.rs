@@ -172,10 +172,10 @@ impl ReplayShard {
             
             // Use key.as_ref() to get &[u8] — avoids Borrow<Q> ambiguity
             // between Borrow<[u8]> and Borrow<Box<[u8]>>
-            if let Some(entry) = self.cache.peek(key.as_ref()) {
-                if entry.seq == queue_seq {
-                    self.cache.pop(key.as_ref());
-                }
+            if let Some(entry) = self.cache.peek(key.as_ref())
+                && entry.seq == queue_seq
+            {
+                self.cache.pop(key.as_ref());
             }
         }
     }
@@ -342,8 +342,10 @@ impl ReplayStats {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
-    
+
     #[test]
     fn test_stats_shared_counters() {
         let stats = Arc::new(Stats::new());

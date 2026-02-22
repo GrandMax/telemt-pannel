@@ -613,20 +613,15 @@ pub struct ListenerConfig {
 /// - `show_link = "*"`          — show links for all users
 /// - `show_link = ["a", "b"]`   — show links for specific users
 /// - omitted                    — show no links (default)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum ShowLink {
     /// Don't show any links (default when omitted).
+    #[default]
     None,
     /// Show links for all configured users.
     All,
     /// Show links for specific users.
     Specific(Vec<String>),
-}
-
-impl Default for ShowLink {
-    fn default() -> Self {
-        ShowLink::None
-    }
 }
 
 impl ShowLink {

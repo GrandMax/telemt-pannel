@@ -63,20 +63,18 @@ pub async fn download_proxy_secret() -> Result<Vec<u8>> {
         )));
     }
 
-    if let Some(date) = resp.headers().get(reqwest::header::DATE) {
-        if let Ok(date_str) = date.to_str() {
-            if let Ok(server_time) = httpdate::parse_http_date(date_str) {
-                if let Ok(skew) = SystemTime::now().duration_since(server_time).or_else(|e| {
-                    server_time.duration_since(SystemTime::now()).map_err(|_| e)
-                }) {
-                    let skew_secs = skew.as_secs();
-                    if skew_secs > 60 {
-                        warn!(skew_secs, "Time skew >60s detected from proxy-secret Date header");
-                    } else if skew_secs > 30 {
-                        warn!(skew_secs, "Time skew >30s detected from proxy-secret Date header");
-                    }
-                }
-            }
+    if let Some(date) = resp.headers().get(reqwest::header::DATE)
+        && let Ok(date_str) = date.to_str()
+        && let Ok(server_time) = httpdate::parse_http_date(date_str)
+        && let Ok(skew) = SystemTime::now().duration_since(server_time).or_else(|e| {
+            server_time.duration_since(SystemTime::now()).map_err(|_| e)
+        })
+    {
+        let skew_secs = skew.as_secs();
+        if skew_secs > 60 {
+            warn!(skew_secs, "Time skew >60s detected from proxy-secret Date header");
+        } else if skew_secs > 30 {
+            warn!(skew_secs, "Time skew >30s detected from proxy-secret Date header");
         }
     }
 

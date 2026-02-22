@@ -90,10 +90,10 @@ async fn check_family(
 
         let key = (dc, family);
         let now = Instant::now();
-        if let Some(ts) = next_attempt.get(&key) {
-            if now < *ts {
-                continue;
-            }
+        if let Some(ts) = next_attempt.get(&key)
+            && now < *ts
+        {
+            continue;
         }
 
         let max_concurrent = pool.me_reconnect_max_concurrent_per_dc.max(1) as usize;

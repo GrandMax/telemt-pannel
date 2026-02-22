@@ -24,6 +24,9 @@ const ME_ACTIVE_PING_SECS: u64 = 25;
 const ME_ACTIVE_PING_JITTER_SECS: i64 = 5;
 const ME_KEEPALIVE_PAYLOAD_LEN: usize = 4;
 
+/// DC index → list of (IP, port) for ME proxy
+type DcProxyMap = Arc<RwLock<HashMap<i32, Vec<(IpAddr, u16)>>>>;
+
 #[derive(Clone)]
 pub struct MeWriter {
     pub id: u64,
@@ -64,8 +67,8 @@ pub struct MePool {
     pub(super) me_reconnect_backoff_base: Duration,
     pub(super) me_reconnect_backoff_cap: Duration,
     pub(super) me_reconnect_fast_retry_count: u32,
-    pub(super) proxy_map_v4: Arc<RwLock<HashMap<i32, Vec<(IpAddr, u16)>>>>,
-    pub(super) proxy_map_v6: Arc<RwLock<HashMap<i32, Vec<(IpAddr, u16)>>>>,
+    pub(super) proxy_map_v4: DcProxyMap,
+    pub(super) proxy_map_v6: DcProxyMap,
     pub(super) default_dc: AtomicI32,
     pub(super) next_writer_id: AtomicU64,
     pub(super) ping_tracker: Arc<Mutex<HashMap<i64, (std::time::Instant, u64)>>>,
@@ -84,6 +87,7 @@ pub struct NatReflectionCache {
 }
 
 impl MePool {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         proxy_tag: Option<Vec<u8>>,
         proxy_secret: Vec<u8>,
@@ -236,10 +240,10 @@ impl MePool {
             let mut guard = self.proxy_map_v4.write().await;
             let keys: Vec<i32> = guard.keys().cloned().collect();
             for k in keys.iter().cloned().filter(|k| *k > 0) {
-                if !guard.contains_key(&-k) {
-                    if let Some(addrs) = guard.get(&k).cloned() {
-                        guard.insert(-k, addrs);
-                    }
+                if !guard.contains_key(&-k)
+                    && let Some(addrs) = guard.get(&k).cloned()
+                {
+                    guard.insert(-k, addrs);
                 }
             }
         }
@@ -247,10 +251,10 @@ impl MePool {
             let mut guard = self.proxy_map_v6.write().await;
             let keys: Vec<i32> = guard.keys().cloned().collect();
             for k in keys.iter().cloned().filter(|k| *k > 0) {
-                if !guard.contains_key(&-k) {
-                    if let Some(addrs) = guard.get(&k).cloned() {
-                        guard.insert(-k, addrs);
-                    }
+                if !guard.contains_key(&-k)
+                    && let Some(addrs) = guard.get(&k).cloned()
+                {
+                    guard.insert(-k, addrs);
                 }
             }
         }
@@ -506,13 +510,12 @@ impl MePool {
                 cancel_reader_token.clone(),
             )
             .await;
-            if let Some(pool) = pool.upgrade() {
-                if cleanup_for_reader
+            if let Some(pool) = pool.upgrade()
+                && cleanup_for_reader
                     .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
                     .is_ok()
-                {
-                    pool.remove_writer_and_close_clients(writer_id).await;
-                }
+            {
+                pool.remove_writer_and_close_clients(writer_id).await;
             }
             if let Err(e) = res {
                 warn!(error = %e, "ME reader ended");
@@ -548,13 +551,12 @@ impl MePool {
                 if tx_ping.send(WriterCommand::DataAndFlush(p)).await.is_err() {
                     debug!("Active ME ping failed, removing dead writer");
                     cancel_ping.cancel();
-                    if let Some(pool) = pool_ping.upgrade() {
-                        if cleanup_for_ping
+                    if let Some(pool) = pool_ping.upgrade()
+                        && cleanup_for_ping
                             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
                             .is_ok()
-                        {
-                            pool.remove_writer_and_close_clients(writer_id).await;
-                        }
+                    {
+                        pool.remove_writer_and_close_clients(writer_id).await;
                     }
                     break;
                 }
@@ -642,21 +644,17 @@ impl MePool {
         let pool = Arc::downgrade(self);
         tokio::spawn(async move {
             let deadline = Instant::now() + Duration::from_secs(300);
-            loop {
-                if let Some(p) = pool.upgrade() {
-                    if Instant::now() >= deadline {
-                        warn!(writer_id, "Drain timeout, force-closing");
-                        let _ = p.remove_writer_and_close_clients(writer_id).await;
-                        break;
-                    }
-                    if p.registry.is_writer_empty(writer_id).await {
-                        let _ = p.remove_writer_only(writer_id).await;
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                } else {
+            while let Some(p) = pool.upgrade() {
+                if Instant::now() >= deadline {
+                    warn!(writer_id, "Drain timeout, force-closing");
+                    let _ = p.remove_writer_and_close_clients(writer_id).await;
                     break;
                 }
+                if p.registry.is_writer_empty(writer_id).await {
+                    let _ = p.remove_writer_only(writer_id).await;
+                    break;
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
             }
         });
     }

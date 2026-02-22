@@ -14,6 +14,7 @@ use crate::stats::Stats;
 use crate::stream::{BufferPool, CryptoReader, CryptoWriter};
 use crate::transport::middle_proxy::{MePool, MeResponse, proto_flags_for_tag};
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn handle_via_middle_proxy<R, W>(
     mut crypto_reader: CryptoReader<R>,
     crypto_writer: CryptoWriter<W>,
@@ -142,13 +143,13 @@ where
         .unwrap_or_else(|e| Err(ProxyError::Proxy(format!("ME writer join error: {e}"))));
 
     // When client closes, but ME channel stopped as unregistered - it isnt error
-    if client_closed {
-        if matches!(
+    if client_closed
+        && matches!(
             writer_result,
             Err(ProxyError::Proxy(ref msg)) if msg == "ME connection lost"
-        ) {
-            writer_result = Ok(());
-        }
+        )
+    {
+        writer_result = Ok(());
     }
 
     let result = match (main_result, writer_result) {
@@ -251,7 +252,7 @@ where
 
     match proto_tag {
         ProtoTag::Abridged => {
-            if data.len() % 4 != 0 {
+            if !data.len().is_multiple_of(4) {
                 return Err(ProxyError::Proxy(format!(
                     "Abridged payload must be 4-byte aligned, got {}",
                     data.len()

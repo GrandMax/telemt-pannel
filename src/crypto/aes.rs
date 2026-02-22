@@ -26,8 +26,8 @@ type Aes256Ctr = Ctr128BE<Aes256>;
 ///
 /// **Zeroize note:** The inner `Aes256Ctr` cipher state (expanded key schedule
 /// + counter) is opaque and cannot be zeroized. If you need to protect key
-/// material, zeroize the `[u8; 32]` key and `u128` IV at the call site
-/// before dropping them.
+///   material, zeroize the `[u8; 32]` key and `u128` IV at the call site
+///   before dropping them.
 pub struct AesCtr {
     cipher: Aes256Ctr,
 }
@@ -147,7 +147,7 @@ impl AesCbc {
     ///
     /// CBC Encryption: C[i] = AES_Encrypt(P[i] XOR C[i-1]), where C[-1] = IV
     pub fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>> {
-        if data.len() % Self::BLOCK_SIZE != 0 {
+        if !data.len().is_multiple_of(Self::BLOCK_SIZE) {
             return Err(ProxyError::Crypto(
                 format!("CBC data must be aligned to 16 bytes, got {}", data.len())
             ));
@@ -178,7 +178,7 @@ impl AesCbc {
     ///
     /// CBC Decryption: P[i] = AES_Decrypt(C[i]) XOR C[i-1], where C[-1] = IV
     pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>> {
-        if data.len() % Self::BLOCK_SIZE != 0 {
+        if !data.len().is_multiple_of(Self::BLOCK_SIZE) {
             return Err(ProxyError::Crypto(
                 format!("CBC data must be aligned to 16 bytes, got {}", data.len())
             ));
@@ -207,7 +207,7 @@ impl AesCbc {
     
     /// Encrypt data in-place
     pub fn encrypt_in_place(&self, data: &mut [u8]) -> Result<()> {
-        if data.len() % Self::BLOCK_SIZE != 0 {
+        if !data.len().is_multiple_of(Self::BLOCK_SIZE) {
             return Err(ProxyError::Crypto(
                 format!("CBC data must be aligned to 16 bytes, got {}", data.len())
             ));
@@ -240,7 +240,7 @@ impl AesCbc {
     
     /// Decrypt data in-place
     pub fn decrypt_in_place(&self, data: &mut [u8]) -> Result<()> {
-        if data.len() % Self::BLOCK_SIZE != 0 {
+        if !data.len().is_multiple_of(Self::BLOCK_SIZE) {
             return Err(ProxyError::Crypto(
                 format!("CBC data must be aligned to 16 bytes, got {}", data.len())
             ));

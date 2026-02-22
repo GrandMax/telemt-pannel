@@ -76,7 +76,7 @@ impl<W> AbridgedFrameWriter<W> {
 impl<W: AsyncWrite + Unpin> AbridgedFrameWriter<W> {
     /// Write a frame
     pub async fn write_frame(&mut self, data: &[u8], meta: &FrameMeta) -> Result<()> {
-        if data.len() % 4 != 0 {
+        if !data.len().is_multiple_of(4) {
             return Err(Error::new(
                 ErrorKind::InvalidInput,
                 format!("Abridged frame must be aligned to 4 bytes, got {}", data.len()),
@@ -233,7 +233,7 @@ impl<R: AsyncRead + Unpin> SecureIntermediateFrameReader<R> {
         self.upstream.read_exact(&mut data).await?;
         
         // Strip padding (not aligned to 4)
-        if len % 4 != 0 {
+        if !len.is_multiple_of(4) {
             let actual_len = len - (len % 4);
             data.truncate(actual_len);
         }
@@ -320,7 +320,7 @@ impl<R: AsyncRead + Unpin> MtprotoFrameReader<R> {
             }
             
             // Validate length
-            if len < MIN_MSG_LEN || len > MAX_MSG_LEN || len % PADDING_FILLER.len() != 0 {
+            if !(MIN_MSG_LEN..=MAX_MSG_LEN).contains(&len) || !len.is_multiple_of(PADDING_FILLER.len()) {
                 return Err(Error::new(
                     ErrorKind::InvalidData,
                     format!("Invalid message length: {}", len),

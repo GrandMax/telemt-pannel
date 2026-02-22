@@ -93,19 +93,18 @@ pub async fn run_probe(config: &NetworkConfig, stun_addr: Option<String>, nat_pr
 }
 
 pub fn decide_network_capabilities(config: &NetworkConfig, probe: &NetworkProbe) -> NetworkDecision {
-    let mut decision = NetworkDecision::default();
-
-    decision.ipv4_dc = config.ipv4 && probe.detected_ipv4.is_some();
-    decision.ipv6_dc = config.ipv6.unwrap_or(probe.detected_ipv6.is_some()) && probe.detected_ipv6.is_some();
-
-    decision.ipv4_me = config.ipv4
-        && probe.detected_ipv4.is_some()
-        && (!probe.ipv4_is_bogon || probe.reflected_ipv4.is_some());
-
     let ipv6_enabled = config.ipv6.unwrap_or(probe.detected_ipv6.is_some());
-    decision.ipv6_me = ipv6_enabled
-        && probe.detected_ipv6.is_some()
-        && (!probe.ipv6_is_bogon || probe.reflected_ipv6.is_some());
+    let mut decision = NetworkDecision {
+        ipv4_dc: config.ipv4 && probe.detected_ipv4.is_some(),
+        ipv6_dc: ipv6_enabled && probe.detected_ipv6.is_some(),
+        ipv4_me: config.ipv4
+            && probe.detected_ipv4.is_some()
+            && (!probe.ipv4_is_bogon || probe.reflected_ipv4.is_some()),
+        ipv6_me: ipv6_enabled
+            && probe.detected_ipv6.is_some()
+            && (!probe.ipv6_is_bogon || probe.reflected_ipv6.is_some()),
+        ..Default::default()
+    };
 
     decision.effective_prefer = match config.prefer {
         6 if decision.ipv6_me || decision.ipv6_dc => 6,
