@@ -1,0 +1,17 @@
+# Template: SNI_DOMAIN_PLACEHOLDER and TELEMT_PORT_PLACEHOLDER are replaced by install.sh.
+# Domain here must match censorship.tls_domain in telemt.toml.
+
+tcp:
+  routers:
+    mtproxy:
+      rule: "HostSNI(`SNI_DOMAIN_PLACEHOLDER`)"
+      entryPoints:
+        - websecure
+      service: mtproxy
+      tls:
+        passthrough: true
+  services:
+    mtproxy:
+      loadBalancer:
+        servers:
+          - address: "telemt:TELEMT_PORT_PLACEHOLDER"

@@ -77,6 +77,7 @@ If you have expertise in asynchronous network applications, traffic analysis, re
   - [Too many open files](#too-many-open-files)
 - [Build](#build)
 - [Docker](#docker)
+- [Install script (Docker + Traefik)](#install-script-docker--traefik)
 - [Why Rust?](#why-rust)
 
 ## Features
@@ -543,6 +544,18 @@ docker run --name telemt --restart unless-stopped \
   --ulimit nofile=65536:65536 \
   telemt:local
 ```
+
+## Install script (Docker + Traefik)
+
+Для быстрой установки с Traefik (один порт 443, маршрутизация по SNI, Fake TLS) используйте скрипт в корне репо:
+
+```bash
+./install.sh
+```
+
+Скрипт интерактивно запросит каталог установки, порт и домен маскировки, соберёт образ telemt из исходников и выведет ссылку для Telegram. Подкоманды: `update` (обновление образа), `config` (смена домена SNI), `uninstall` (удаление).
+
+Подробно: [docs/install.md](docs/install.md) — способ установки, подкоманды, переменные окружения, смена SNI.
 
 ## Why Rust?
 - Long-running reliability and idempotent behavior
