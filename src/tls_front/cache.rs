@@ -130,7 +130,7 @@ impl TlsFrontCache {
         tokio::spawn(async move {
             loop {
                 for domain in &domains {
-                    fetcher(domain.clone()).await;
+                    let _ = fetcher(domain.clone()).await;
                 }
                 sleep(interval).await;
             }

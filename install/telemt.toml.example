@@ -1,5 +1,6 @@
 # Copy to telemt.toml and substitute your secret (openssl rand -hex 16).
 # Domain in censorship.tls_domain must match HostSNI rule in traefik/dynamic/tcp.yml.
+# TELEMT_PORT_PLACEHOLDER is replaced by install.sh with TELEMT_INTERNAL_PORT (default 1234).
 
 show_link = ["docker"]
 
@@ -14,7 +15,7 @@ secure = false
 tls = true
 
 [server]
-port = 1234
+port = TELEMT_PORT_PLACEHOLDER
 listen_addr_ipv4 = "0.0.0.0"
 listen_addr_ipv6 = "::"
 
