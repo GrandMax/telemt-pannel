@@ -248,7 +248,7 @@ impl UpstreamManager {
 
         if healthy.is_empty() {
             warn!(scope = scope, "No healthy upstreams available! Using random.");
-            return Some(filtered_upstreams[rand::rng().gen_range(0..filtered_upstreams.len())]);
+            return Some(filtered_upstreams[rand::rng().random_range(0..filtered_upstreams.len())]);
         }
 
         if healthy.len() == 1 {
@@ -267,10 +267,10 @@ impl UpstreamManager {
         let total: f64 = weights.iter().map(|(_, w)| w).sum();
 
         if total <= 0.0 {
-            return Some(healthy[rand::rng().gen_range(0..healthy.len())]);
+            return Some(healthy[rand::rng().random_range(0..healthy.len())]);
         }
 
-        let mut choice: f64 = rand::rng().gen_range(0.0..total);
+        let mut choice: f64 = rand::rng().random_range(0.0..total);
 
         for &(idx, weight) in &weights {
             if choice < weight {

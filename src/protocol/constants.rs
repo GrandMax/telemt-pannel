@@ -1,6 +1,6 @@
 //! Protocol constants and datacenter addresses
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr};
 
 use crate::crypto::SecureRandom;
 use std::sync::LazyLock;

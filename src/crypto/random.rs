@@ -70,7 +70,7 @@ impl SecureRandom {
             return 0;
         }
         let mut inner = self.inner.lock();
-        inner.rng.gen_range(0..max)
+        inner.rng.random_range(0..max)
     }
     
     /// Generate random bits
@@ -110,7 +110,7 @@ impl SecureRandom {
     pub fn shuffle<T>(&self, slice: &mut [T]) {
         let mut inner = self.inner.lock();
         for i in (1..slice.len()).rev() {
-            let j = inner.rng.gen_range(0..=i);
+            let j = inner.rng.random_range(0..=i);
             slice.swap(i, j);
         }
     }

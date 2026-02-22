@@ -200,7 +200,7 @@ impl ProxyConfig {
 
         // Random fake_cert_len only when default is in use.
         if !config.censorship.tls_emulation && config.censorship.fake_cert_len == default_fake_cert_len() {
-            config.censorship.fake_cert_len = rand::rng().gen_range(1024..4096);
+            config.censorship.fake_cert_len = rand::rng().random_range(1024..4096);
         }
 
         // Resolve listen_tcp: explicit value wins, otherwise auto-detect.
