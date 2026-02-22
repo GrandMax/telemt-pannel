@@ -335,7 +335,7 @@ prompt_install_dir_existing() {
 show_menu() {
 	while true; do
 		echo ""
-		echo "  ${GREEN}Telemt MTProxy — установка и управление${NC}"
+		echo -e "  ${GREEN}Telemt MTProxy — установка и управление${NC}"
 		echo ""
 		echo "  1) Установка (новая установка в каталог)"
 		echo "  2) Обновление (пересборка и перезапуск)"
