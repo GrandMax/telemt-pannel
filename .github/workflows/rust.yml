@@ -21,10 +21,10 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Install Rust toolchain (1.85+ required for edition 2024)
+    - name: Install Rust toolchain (1.88+ for edition 2024 and time/chrono deps)
       uses: dtolnay/rust-toolchain@stable
       with:
-        toolchain: 1.85
+        toolchain: 1.88
         components: rustfmt, clippy
 
     - name: Show Rust version
