@@ -1,13 +1,8 @@
 # ==========================
 # Stage 1: Build
 # ==========================
-# https://hub.docker.com/layers/library/rust/1.93.1-slim-bookworm
-FROM rust:1.93.1-slim-bookworm AS builder
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+# Полный bookworm: уже есть pkg-config, gcc — без apt-get (обход GPG-проблем на части хостов)
+FROM rust:1.93.1-bookworm AS builder
 
 WORKDIR /build
 

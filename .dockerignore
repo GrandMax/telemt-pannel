@@ -1,0 +1,28 @@
+# Git and IDE
+.git
+.gitignore
+.idea
+*.rs.bk
+
+# Build artifacts (контекст без target ~десятки MB вместо GB)
+target
+debug
+@target
+
+# Tests, scripts, docs (не нужны в образе)
+tests
+scripts
+docs
+*.md
+!LICENSING.md
+
+# CI and local
+.github
+.cursor
+temp
+**/mutants.out*
+.DS_Store
+
+# Docker
+Dockerfile*
+.dockerignore
