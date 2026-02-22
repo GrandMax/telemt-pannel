@@ -1,8 +1,8 @@
 # ==========================
 # Stage 1: Build
 # ==========================
-# rust:bookworm = latest stable Rust (some deps require >1.85.1). Full image for build-essential.
-FROM rust:bookworm AS builder
+# https://hub.docker.com/layers/library/rust/1.93.1-slim-bookworm
+FROM rust:1.93.1-slim-bookworm AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
