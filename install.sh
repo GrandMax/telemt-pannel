@@ -11,7 +11,7 @@ FAKE_DOMAIN="${FAKE_DOMAIN:-pikabu.ru}"
 TELEMT_INTERNAL_PORT="${TELEMT_INTERNAL_PORT:-1234}"
 LISTEN_PORT="${LISTEN_PORT:-443}"
 TELEMT_PREBUILT_IMAGE="${TELEMT_PREBUILT_IMAGE:-grandmax/telemt-pannel:latest}"
-TELEMT_IMAGE_SOURCE="${TELEMT_IMAGE_SOURCE:-build}"
+TELEMT_IMAGE_SOURCE="${TELEMT_IMAGE_SOURCE:-prebuilt}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -94,7 +94,7 @@ prompt_install_dir() {
 		local default="${INSTALL_DIR}"
 		echo -n "Каталог установки [${default}]: "
 		read -r input || true
-		[[ -n "$input" ]] && INSTALL_DIR="$input"
+		if [[ -n "$input" ]]; then INSTALL_DIR="$input"; fi
 	fi
 }
 
@@ -107,7 +107,7 @@ prompt_port() {
 			if [[ -t 0 ]]; then
 				echo -n "Введите порт [${suggested}]: "
 				read -r input || true
-				[[ -z "$input" ]] && input=$suggested
+				if [[ -z "$input" ]]; then input=$suggested; fi
 			else
 				# Non-interactive: respect explicit LISTEN_PORT from env
 				if [[ "${LISTEN_PORT:-443}" != "443" ]]; then
@@ -134,7 +134,7 @@ prompt_port() {
 		if [[ -t 0 ]]; then
 			echo -n "Порт для прокси [443]: "
 			read -r input || true
-			[[ -n "$input" ]] && input="$input" || input=443
+			if [[ -z "$input" ]]; then input=443; fi
 			while true; do
 				if [[ "$input" =~ ^[0-9]+$ ]] && (( input >= 1 && input <= 65535 )); then
 					if is_port_in_use "$input"; then
@@ -149,7 +149,7 @@ prompt_port() {
 					warn "Введите число от 1 до 65535."
 					echo -n "Введите порт [443]: "
 					read -r input || true
-					[[ -z "$input" ]] && input=443
+					if [[ -z "$input" ]]; then input=443; fi
 				fi
 			done
 		else
@@ -167,7 +167,7 @@ prompt_fake_domain() {
 	if [[ -t 0 ]]; then
 		echo -n "Домен для маскировки Fake TLS (SNI) [${FAKE_DOMAIN}]: "
 		read -r input || true
-		[[ -n "$input" ]] && FAKE_DOMAIN="$input"
+		if [[ -n "$input" ]]; then FAKE_DOMAIN="$input"; fi
 	fi
 }
 
@@ -180,30 +180,32 @@ confirm_install() {
 	echo "  Домен:   ${FAKE_DOMAIN}"
 	echo -n "Продолжить? [Y/n] "
 	read -r ans || true
-	[[ -z "$ans" ]] && return 0
-	[[ "${ans,,}" == "y" || "${ans,,}" == "yes" ]] && return 0
+	ans_lower=$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')
+	if [[ -z "$ans" ]] || [[ "$ans_lower" == "y" ]] || [[ "$ans_lower" == "yes" ]]; then
+		return 0
+	fi
 	info "Установка отменена."
 	exit 0
 }
 
-# Set TELEMT_IMAGE_SOURCE=build or prebuilt. Interactive: prompt; non-interactive: use env (default build).
+# Set TELEMT_IMAGE_SOURCE=build or prebuilt. Interactive: prompt; non-interactive: use env (default prebuilt).
 prompt_image_source() {
 	if [[ -t 0 ]]; then
 		echo ""
 		echo "Образ telemt:"
-		echo "  1) Собрать из исходников (локально)"
-		echo "  2) Скачать готовый образ (${TELEMT_PREBUILT_IMAGE})"
+		echo "  1) Скачать готовый образ (${TELEMT_PREBUILT_IMAGE})"
+		echo "  2) Собрать из исходников (локально)"
 		echo -n "Выбор [1]: "
 		read -r input || true
 		input="${input%% *}"
 		if [[ "$input" == "2" ]]; then
-			TELEMT_IMAGE_SOURCE=prebuilt
-		else
 			TELEMT_IMAGE_SOURCE=build
+		else
+			TELEMT_IMAGE_SOURCE=prebuilt
 		fi
 	else
-		# Non-interactive: already set from env, default build
-		TELEMT_IMAGE_SOURCE="${TELEMT_IMAGE_SOURCE:-build}"
+		# Non-interactive: already set from env, default prebuilt
+		TELEMT_IMAGE_SOURCE="${TELEMT_IMAGE_SOURCE:-prebuilt}"
 	fi
 }
 
@@ -271,11 +273,11 @@ run_compose() {
 print_link() {
 	local SECRET TLS_DOMAIN DOMAIN_HEX LONG_SECRET SERVER_IP LINK
 	SECRET=$(cat "${INSTALL_DIR}/.secret" 2>/dev/null | tr -d '\n\r')
-	[[ -z "$SECRET" ]] && err "Секрет не найден в ${INSTALL_DIR}/.secret"
+	if [[ -z "$SECRET" ]]; then err "Секрет не найден в ${INSTALL_DIR}/.secret"; fi
 
 	TLS_DOMAIN=$(grep -E '^[[:space:]]*tls_domain[[:space:]]*=' "${INSTALL_DIR}/telemt.toml" \
 		| head -n1 | sed -E 's/.*=[[:space:]]*"([^"]+)".*/\1/')
-	[[ -z "$TLS_DOMAIN" ]] && err "tls_domain не найден в ${INSTALL_DIR}/telemt.toml"
+	if [[ -z "$TLS_DOMAIN" ]]; then err "tls_domain не найден в ${INSTALL_DIR}/telemt.toml"; fi
 
 	DOMAIN_HEX=$(printf '%s' "$TLS_DOMAIN" | od -An -tx1 | tr -d ' \n')
 	if [[ "$SECRET" =~ ^[0-9a-fA-F]{32}$ ]]; then
@@ -287,7 +289,7 @@ print_link() {
 	# LISTEN_PORT from .env or default
 	local port=443
 	[[ -f "${INSTALL_DIR}/.env" ]] && source "${INSTALL_DIR}/.env" 2>/dev/null || true
-	[[ -n "$LISTEN_PORT" ]] && port="$LISTEN_PORT"
+	if [[ -n "$LISTEN_PORT" ]]; then port="$LISTEN_PORT"; fi
 
 	SERVER_IP=""
 	for url in https://ifconfig.me/ip https://icanhazip.com https://api.ipify.org https://checkip.amazonaws.com; do
@@ -346,7 +348,7 @@ cmd_update() {
 	if [[ -f "${dir}/.env" ]]; then
 		local val
 		val=$(grep -E '^TELEMT_IMAGE_SOURCE=' "${dir}/.env" 2>/dev/null | cut -d= -f2-)
-		[[ -n "$val" ]] && img_source="$val"
+		if [[ -n "$val" ]]; then img_source="$val"; fi
 	fi
 	info "Обновление образа telemt в ${dir} ..."
 	if [[ "$img_source" == "prebuilt" ]]; then
@@ -373,7 +375,7 @@ prompt_install_dir_existing() {
 		while true; do
 			echo -n "Каталог установки [${default}]: "
 			read -r input || true
-			[[ -z "$input" ]] && input="$default"
+			if [[ -z "$input" ]]; then input="$default"; fi
 			local dir
 			dir="$(resolve_install_dir "$input")"
 			if [[ ! -d "$dir" ]]; then
@@ -446,13 +448,13 @@ cmd_config() {
 		if [[ -t 0 ]]; then
 			echo -n "Новый домен для Fake TLS (tls_domain) [${current_domain}]: "
 			read -r new_domain || true
-			[[ -z "$new_domain" ]] && new_domain="$current_domain"
+			if [[ -z "$new_domain" ]]; then new_domain="$current_domain"; fi
 		else
 			err "Без TTY укажите домен через env FAKE_DOMAIN или аргумент: install.sh config --sni example.com"
 		fi
 	fi
 
-	[[ -z "$new_domain" ]] && err "Домен не задан."
+	if [[ -z "$new_domain" ]]; then err "Домен не задан."; fi
 
 	# Update telemt.toml
 	sed -i.bak -E "s/^([[:space:]]*tls_domain[[:space:]]*=[[:space:]]*)\"[^\"]*\"/\1\"${new_domain}\"/" "${dir}/telemt.toml"
@@ -505,7 +507,8 @@ cmd_uninstall() {
 	if [[ -z "$force" ]] && [[ -t 0 ]]; then
 		echo -n "Удалить установку в ${dir}? [y/N] "
 		read -r ans || true
-		[[ "${ans,,}" != "y" && "${ans,,}" != "yes" ]] && exit 0
+		ans_lower=$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')
+		if [[ "$ans_lower" != "y" ]] && [[ "$ans_lower" != "yes" ]]; then exit 0; fi
 	fi
 
 	info "Останавливаю контейнеры..."
