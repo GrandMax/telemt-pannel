@@ -74,7 +74,7 @@ pub async fn stun_probe_family(stun_addr: &str, family: IpFamily) -> Result<Opti
     let mut buf = [0u8; 256];
     let mut attempt = 0;
     let mut backoff = Duration::from_secs(1);
-    loop {
+    'outer: loop {
         socket
             .send(&req)
             .await
@@ -182,6 +182,7 @@ pub async fn stun_probe_family(stun_addr: &str, family: IpFamily) -> Result<Opti
         idx += (alen + 3) & !3;
     }
 
+        break 'outer;
     }
 
     Ok(None)

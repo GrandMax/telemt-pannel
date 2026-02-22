@@ -1,6 +1,6 @@
 //! IP Addr Detect
 
-use std::net::{IpAddr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, UdpSocket};
 use std::time::Duration;
 use tracing::{debug, warn};
 

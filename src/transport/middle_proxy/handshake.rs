@@ -19,7 +19,7 @@ use crate::error::{ProxyError, Result};
 use crate::network::IpFamily;
 use crate::protocol::constants::{
     ME_CONNECT_TIMEOUT_SECS, ME_HANDSHAKE_TIMEOUT_SECS, RPC_CRYPTO_AES_U32, RPC_HANDSHAKE_ERROR_U32,
-    RPC_HANDSHAKE_U32, RPC_PING_U32, RPC_PONG_U32, RPC_NONCE_U32,
+    RPC_HANDSHAKE_U32,
 };
 
 use super::codec::{
@@ -314,7 +314,7 @@ impl MePool {
             );
         }
 
-        let (encrypted_hs, mut write_iv) = cbc_encrypt_padded(&wk, &wi, &hs_frame)?;
+        let (encrypted_hs, write_iv) = cbc_encrypt_padded(&wk, &wi, &hs_frame)?;
         if diag_level >= 1 {
             info!(
                 hs_cipher = %hex_dump(&encrypted_hs),

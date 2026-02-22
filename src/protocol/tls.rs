@@ -5,6 +5,7 @@
 //! actually carries MTProto authentication data.
 
 use crate::crypto::{sha256_hmac, SecureRandom};
+#[allow(unused_imports)]
 use crate::error::{ProxyError, Result};
 use super::constants::*;
 use std::time::{SystemTime, UNIX_EPOCH};

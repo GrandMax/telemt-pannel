@@ -1,7 +1,6 @@
 //! Statistics and replay protection
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
 use std::time::{Instant, Duration};
 use dashmap::DashMap;
 use parking_lot::Mutex;

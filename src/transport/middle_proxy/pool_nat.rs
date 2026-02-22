@@ -1,7 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::Duration;
 
-use tracing::{info, warn, debug};
+use tracing::{info, warn};
 
 use crate::error::{ProxyError, Result};
 use crate::network::probe::is_bogon;

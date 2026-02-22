@@ -1,5 +1,7 @@
 //! Stream wrappers for MTProto protocol layers
 
+#![allow(unused_imports)]
+
 pub mod state;
 pub mod buffer_pool;
 pub mod traits;

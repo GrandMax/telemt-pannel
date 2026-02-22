@@ -17,10 +17,9 @@ use crate::network::IpFamily;
 use crate::protocol::constants::*;
 
 use super::ConnRegistry;
-use super::registry::{BoundConn, ConnMeta};
+use super::registry::BoundConn;
 use super::codec::{RpcWriter, WriterCommand};
 use super::reader::reader_loop;
-use super::MeResponse;
 const ME_ACTIVE_PING_SECS: u64 = 25;
 const ME_ACTIVE_PING_JITTER_SECS: i64 = 5;
 const ME_KEEPALIVE_PAYLOAD_LEN: usize = 4;

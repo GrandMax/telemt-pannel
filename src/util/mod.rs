@@ -1,5 +1,7 @@
 //! Utils
 
+#![allow(unused_imports)]
+
 pub mod ip;
 pub mod time;
 

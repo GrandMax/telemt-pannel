@@ -485,7 +485,7 @@ impl UpstreamManager {
     /// Tests BOTH IPv6 and IPv4, returns separate results for each.
     pub async fn ping_all_dcs(
         &self,
-        prefer_ipv6: bool,
+        _prefer_ipv6: bool,
         dc_overrides: &HashMap<String, Vec<String>>,
         ipv4_enabled: bool,
         ipv6_enabled: bool,

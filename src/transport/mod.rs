@@ -1,5 +1,7 @@
 //! Transport layer: connection pooling, socket utilities, proxy protocol
 
+#![allow(unused_imports)]
+
 pub mod pool;
 pub mod proxy_protocol;
 pub mod socket;
