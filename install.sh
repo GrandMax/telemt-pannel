@@ -436,7 +436,8 @@ cmd_install() {
 		if ! is_build_repo_root "$REPO_ROOT"; then
 			ensure_git
 			mkdir -p "${INSTALL_DIR}"
-			CLONE_DIR="/opt/mtpannel-telemt-source"
+			# Prefer env override; else clone under INSTALL_DIR so non-root users can install without /opt
+			CLONE_DIR="${CLONE_DIR:-${INSTALL_DIR}/.telemt-source}"
 			if [[ -d "${CLONE_DIR}/.git" ]]; then
 				info "Обновляю клон репозитория в ${CLONE_DIR} ..."
 				(cd "${CLONE_DIR}" && git pull --depth 1 2>/dev/null) || true

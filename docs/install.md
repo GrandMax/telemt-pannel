@@ -7,14 +7,16 @@
 ## Требования
 
 - Docker и Docker Compose (скрипт при необходимости предложит установить Docker).
-- **Готовый образ (prebuilt):** скрипт можно запускать из любого каталога или через `curl ... | bash`; если локальных шаблонов нет — они скачиваются в `/opt/mtpannel-templates`.
-- **Сборка из исходников (build):** если скрипт запущен не из каталога с репозиторием (нет `install/`, `Dockerfile`), он сам клонирует [GrandMax/telemt-pannel](https://github.com/GrandMax/telemt-pannel) в `/opt/mtpannel-telemt-source` и собирает образ оттуда. Для клонирования нужен **git**; при отсутствии скрипт попытается установить его (apt-get/dnf/yum), иначе нужно установить вручную.
+- **Готовый образ (prebuilt):** скрипт можно запускать из любого каталога или через `curl ... | bash`; если локальных шаблонов нет — шаблоны скачиваются в каталог, заданный `TEMPLATES_CACHE_DIR`, или по умолчанию в `<INSTALL_DIR>/.mtpannel-templates` (установка без root возможна при свой каталог установки).
+- **Сборка из исходников (build):** если скрипт запущен не из каталога с репозиторием (нет `install/`, `Dockerfile`), он клонирует [GrandMax/telemt-pannel](https://github.com/GrandMax/telemt-pannel) в каталог из `CLONE_DIR` или по умолчанию в `<INSTALL_DIR>/.telemt-source`. Для клонирования нужен **git**; при отсутствии скрипт попытается установить его (apt-get/dnf/yum), иначе нужно установить вручную.
 
 Каталоги по умолчанию:
 
-- **Каталог установки**: `/opt/mtpannel-data`
-- **Шаблоны (если скачиваются)**: `/opt/mtpannel-templates`
-- **Клон исходников (build, если требуется)**: `/opt/mtpannel-telemt-source`
+- **Каталог установки**: `/opt/mtpannel-data` (переменная `INSTALL_DIR`)
+- **Шаблоны (при скачивании)**: `<INSTALL_DIR>/.mtpannel-templates` или `$HOME/.mtpannel-templates` (переопределяется через `TEMPLATES_CACHE_DIR`)
+- **Клон исходников (build)**: `<INSTALL_DIR>/.telemt-source` (переопределяется через `CLONE_DIR`)
+
+При установке без root задайте свой каталог, например `INSTALL_DIR=$HOME/mtpannel-data` — кэш шаблонов и клон репозитория по умолчанию будут внутри него.
 
 ## Установка и управление
 
@@ -60,6 +62,8 @@
 | `TELEMT_INTERNAL_PORT` | Внутренний порт telemt в Docker | `1234` |
 | `TELEMT_IMAGE_SOURCE` | Источник образа: `build` (сборка из исходников) или `prebuilt` (скачать готовый) | `prebuilt` |
 | `TELEMT_PREBUILT_IMAGE` | Имя готового образа при `TELEMT_IMAGE_SOURCE=prebuilt` | `grandmax/telemt-pannel:latest` |
+| `TEMPLATES_CACHE_DIR` | Каталог кэша шаблонов (при скачивании с GitHub) | `<INSTALL_DIR>/.mtpannel-templates` или `$HOME/.mtpannel-templates` |
+| `CLONE_DIR` | Каталог клона репозитория при сборке из исходников | `<INSTALL_DIR>/.telemt-source` |
 
 Пример неинтерактивной установки:
 
