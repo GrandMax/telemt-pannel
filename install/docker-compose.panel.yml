@@ -1,0 +1,94 @@
+# Proxy + Panel mode. Use with REPO_ROOT and panel env vars set in .env.
+# Extends the base compose: same traefik + telemt, but config on shared volume and panel service added.
+
+services:
+  traefik:
+    image: traefik:v3.6
+    container_name: mtpannel-traefik
+    restart: unless-stopped
+    command:
+      - "--api.dashboard=false"
+      - "--entrypoints.websecure.address=:443"
+      - "--providers.file.directory=/etc/traefik/dynamic"
+      - "--providers.file.watch=true"
+    ports:
+      - "${LISTEN_PORT:-443}:443"
+    volumes:
+      - ./traefik/static:/etc/traefik/static:ro
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+    networks:
+      - mtpannel
+
+  telemt:
+    build:
+      context: ${REPO_ROOT}
+      dockerfile: ${REPO_ROOT}/Dockerfile
+    image: telemt:local
+    container_name: mtpannel-telemt
+    restart: unless-stopped
+    command: ["/app/config/config.toml"]
+    environment:
+      RUST_LOG: "info"
+    volumes:
+      - telemt-config:/app/config:ro
+    networks:
+      - mtpannel
+    depends_on:
+      panel:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=16m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  panel:
+    build:
+      context: ${REPO_ROOT}/panel
+      dockerfile: ${REPO_ROOT}/panel/Dockerfile
+    image: panel:local
+    container_name: mtpannel-panel
+    restart: unless-stopped
+    ports:
+      - "${PANEL_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    volumes:
+      - telemt-config:/app/telemt-config:rw
+      - panel-data:/app/data:rw
+    environment:
+      - TELEMT_CONFIG_PATH=/app/telemt-config/config.toml
+      - TELEMT_METRICS_URL=http://mtpannel-telemt:9090/metrics
+      - DATABASE_URL=sqlite:////app/data/panel.db
+      - SECRET_KEY=${PANEL_SECRET_KEY}
+      - PROXY_HOST=${PROXY_HOST:-localhost}
+      - PROXY_PORT=${LISTEN_PORT:-443}
+      - TLS_DOMAIN=${FAKE_DOMAIN:-example.com}
+    networks:
+      - mtpannel
+
+volumes:
+  telemt-config:
+  panel-data:
+
+networks:
+  mtpannel:
+    driver: bridge

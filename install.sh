@@ -246,6 +246,23 @@ prompt_image_source() {
 	fi
 }
 
+# Set INSTALL_PANEL=yes or no. Interactive: prompt; non-interactive: use env (default no).
+prompt_install_panel() {
+	if [[ -t 0 ]]; then
+		echo ""
+		echo -n "Установить панель управления (веб-интерфейс для пользователей и ссылок)? (y/N): " >&2
+		read -r input || true
+		input=$(printf '%s' "${input}" | tr '[:upper:]' '[:lower:]')
+		if [[ "$input" == "y" ]] || [[ "$input" == "yes" ]] || [[ "$input" == "д" ]]; then
+			INSTALL_PANEL=yes
+		else
+			INSTALL_PANEL=no
+		fi
+	else
+		INSTALL_PANEL="${INSTALL_PANEL:-no}"
+	fi
+}
+
 generate_secret() {
 	openssl rand -hex 16
 }
@@ -293,53 +310,131 @@ copy_and_configure() {
 	mkdir -p "${INSTALL_DIR}"
 	mkdir -p "${INSTALL_DIR}/traefik/dynamic" "${INSTALL_DIR}/traefik/static"
 
-	if [[ "$TELEMT_IMAGE_SOURCE" == "prebuilt" ]]; then
-		sed -e "s|image: grandmax/telemt-pannel:latest|image: ${TELEMT_PREBUILT_IMAGE}|g" \
-			"${REPO_ROOT}/install/docker-compose.prebuilt.yml" > "${INSTALL_DIR}/docker-compose.yml"
+	if [[ "${INSTALL_PANEL:-no}" == "yes" ]]; then
+		cp "${REPO_ROOT}/install/docker-compose.panel.yml" "${INSTALL_DIR}/docker-compose.yml"
+		PANEL_SECRET_KEY=$(openssl rand -hex 32)
+		# .env for panel mode
+		{
+			echo "REPO_ROOT=${REPO_ROOT}"
+			echo "LISTEN_PORT=${LISTEN_PORT}"
+			echo "TELEMT_IMAGE_SOURCE=${TELEMT_IMAGE_SOURCE}"
+			echo "PANEL_SECRET_KEY=${PANEL_SECRET_KEY}"
+			echo "PANEL_PORT=${PANEL_PORT:-8080}"
+			echo "PROXY_HOST=${PROXY_HOST:-localhost}"
+			echo "FAKE_DOMAIN=${FAKE_DOMAIN}"
+		} > "${INSTALL_DIR}/.env"
+		info "Режим «прокси + панель». Конфиг прокси будет в volume, панель на порту ${PANEL_PORT:-8080}."
 	else
-		cp "${REPO_ROOT}/install/docker-compose.yml" "${INSTALL_DIR}/docker-compose.yml"
+		if [[ "$TELEMT_IMAGE_SOURCE" == "prebuilt" ]]; then
+			sed -e "s|image: grandmax/telemt-pannel:latest|image: ${TELEMT_PREBUILT_IMAGE}|g" \
+				"${REPO_ROOT}/install/docker-compose.prebuilt.yml" > "${INSTALL_DIR}/docker-compose.yml"
+		else
+			cp "${REPO_ROOT}/install/docker-compose.yml" "${INSTALL_DIR}/docker-compose.yml"
+		fi
+		cp "${REPO_ROOT}/install/telemt.toml.example" "${INSTALL_DIR}/telemt.toml.example"
+		SECRET=$(generate_secret)
+		sed -e "s/ПОДСТАВЬТЕ_32_СИМВОЛА_HEX/${SECRET}/g" \
+		    -e "s/tls_domain = \"pikabu.ru\"/tls_domain = \"${FAKE_DOMAIN}\"/g" \
+		    -e "s/TELEMT_PORT_PLACEHOLDER/${TELEMT_INTERNAL_PORT}/g" \
+		    "${INSTALL_DIR}/telemt.toml.example" > "${INSTALL_DIR}/telemt.toml"
+		rm -f "${INSTALL_DIR}/telemt.toml.example"
+		info "Создан ${INSTALL_DIR}/telemt.toml (домен маскировки: ${FAKE_DOMAIN})"
+		printf '%s' "$SECRET" > "${INSTALL_DIR}/.secret"
+		{
+			echo "REPO_ROOT=${REPO_ROOT}"
+			echo "LISTEN_PORT=${LISTEN_PORT}"
+			echo "TELEMT_IMAGE_SOURCE=${TELEMT_IMAGE_SOURCE}"
+		} > "${INSTALL_DIR}/.env"
 	fi
-	cp "${REPO_ROOT}/install/telemt.toml.example" "${INSTALL_DIR}/telemt.toml.example"
-
-	SECRET=$(generate_secret)
-
-	sed -e "s/ПОДСТАВЬТЕ_32_СИМВОЛА_HEX/${SECRET}/g" \
-	    -e "s/tls_domain = \"pikabu.ru\"/tls_domain = \"${FAKE_DOMAIN}\"/g" \
-	    -e "s/TELEMT_PORT_PLACEHOLDER/${TELEMT_INTERNAL_PORT}/g" \
-	    "${INSTALL_DIR}/telemt.toml.example" > "${INSTALL_DIR}/telemt.toml"
-	rm -f "${INSTALL_DIR}/telemt.toml.example"
-	info "Создан ${INSTALL_DIR}/telemt.toml (домен маскировки: ${FAKE_DOMAIN})"
 
 	sed -e "s/SNI_DOMAIN_PLACEHOLDER/${FAKE_DOMAIN}/g" \
 	    -e "s/TELEMT_PORT_PLACEHOLDER/${TELEMT_INTERNAL_PORT}/g" \
 	    "${REPO_ROOT}/install/traefik-dynamic-tcp.yml" > "${INSTALL_DIR}/traefik/dynamic/tcp.yml"
 	info "Настроен Traefik: SNI ${FAKE_DOMAIN} -> telemt:${TELEMT_INTERNAL_PORT} (TLS passthrough)"
+}
 
-	printf '%s' "$SECRET" > "${INSTALL_DIR}/.secret"
-
-	# .env for docker compose (REPO_ROOT, LISTEN_PORT, TELEMT_IMAGE_SOURCE)
-	{
-		echo "REPO_ROOT=${REPO_ROOT}"
-		echo "LISTEN_PORT=${LISTEN_PORT}"
-		echo "TELEMT_IMAGE_SOURCE=${TELEMT_IMAGE_SOURCE}"
-	} > "${INSTALL_DIR}/.env"
+create_panel_admin() {
+	cd "${INSTALL_DIR}"
+	[[ -f .env ]] && source .env 2>/dev/null || true
+	local admin_user="${PANEL_ADMIN_USERNAME:-admin}"
+	local admin_pass
+	if [[ -t 0 ]]; then
+		echo ""
+		echo "Создание первого администратора панели (sudo)."
+		echo -n "Имя пользователя [${admin_user}]: " >&2
+		read -r input || true
+		if [[ -n "$input" ]]; then admin_user="$input"; fi
+		echo -n "Пароль: " >&2
+		read -rs admin_pass || true
+		echo "" >&2
+		if [[ -z "$admin_pass" ]]; then
+			warn "Пароль пустой. Создайте админа вручную: cd ${INSTALL_DIR} && docker compose run --rm panel python -m app.cli create-admin --username admin --password YOUR_PASS --sudo"
+			return 0
+		fi
+	else
+		admin_pass="${PANEL_ADMIN_PASSWORD:-}"
+		if [[ -z "$admin_pass" ]]; then
+			info "PANEL_ADMIN_PASSWORD не задан. Создайте админа вручную: docker compose run --rm panel python -m app.cli create-admin --username admin --password YOUR_PASS --sudo"
+			return 0
+		fi
+	fi
+	info "Создание учётной записи администратора..."
+	if docker compose run --rm panel python -m app.cli create-admin --username "$admin_user" --password "$admin_pass" --sudo 2>/dev/null; then
+		info "Администратор ${admin_user} создан."
+	else
+		warn "Не удалось создать админа через CLI. Создайте вручную: cd ${INSTALL_DIR} && docker compose run --rm panel python -m app.cli create-admin --username admin --password YOUR_PASS --sudo"
+	fi
 }
 
 run_compose() {
 	cd "${INSTALL_DIR}"
-	if [[ "${TELEMT_IMAGE_SOURCE}" == "prebuilt" ]]; then
-		info "Загрузка образа telemt и запуск контейнеров..."
-		docker compose --progress plain pull telemt
+	if [[ "${INSTALL_PANEL:-no}" == "yes" ]]; then
+		info "Сборка образов telemt и panel, запуск контейнеров..."
+		docker compose build --no-cache 2>/dev/null || docker compose build
 		docker compose up -d
+		info "Ожидание готовности панели..."
+		for _ in 1 2 3 4 5 6 7 8 9 10; do
+			if docker compose exec -T panel curl -sf http://localhost:8080/health >/dev/null 2>&1; then
+				break
+			fi
+			sleep 2
+		done
+		info "Контейнеры запущены."
 	else
-		info "Сборка образа telemt и запуск контейнеров..."
-		docker compose build --no-cache telemt || docker compose build telemt
-		docker compose up -d
+		if [[ "${TELEMT_IMAGE_SOURCE}" == "prebuilt" ]]; then
+			info "Загрузка образа telemt и запуск контейнеров..."
+			docker compose --progress plain pull telemt
+			docker compose up -d
+		else
+			info "Сборка образа telemt и запуск контейнеров..."
+			docker compose build --no-cache telemt || docker compose build telemt
+			docker compose up -d
+		fi
+		info "Контейнеры запущены."
 	fi
-	info "Контейнеры запущены."
 }
 
 print_link() {
+	[[ -f "${INSTALL_DIR}/.env" ]] && source "${INSTALL_DIR}/.env" 2>/dev/null || true
+	if [[ "${INSTALL_PANEL:-no}" == "yes" ]]; then
+		local port="${PANEL_PORT:-8080}"
+		local panel_url="http://localhost:${port}"
+		echo ""
+		echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
+		echo -e "${GREEN}║  Панель управления MTProxy                             ║${NC}"
+		echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
+		echo ""
+		echo -e "  ${GREEN}${panel_url}${NC}"
+		echo ""
+		echo "  Создайте пользователей в панели — ссылки и QR появятся там."
+		echo "  Данные установки: ${INSTALL_DIR}"
+		echo "  Логи:            cd ${INSTALL_DIR} && docker compose logs -f"
+		echo "  Меню управления: $(rerun_cmd)"
+		echo "  Остановка:       cd ${INSTALL_DIR} && docker compose down"
+		echo ""
+		return 0
+	fi
+
 	local SECRET TLS_DOMAIN DOMAIN_HEX LONG_SECRET SERVER_IP4 SERVER_IP6 port raw url
 	SECRET=$(cat "${INSTALL_DIR}/.secret" 2>/dev/null | tr -d '\n\r')
 	if [[ -z "$SECRET" ]]; then err "Секрет не найден в ${INSTALL_DIR}/.secret"; fi
@@ -431,6 +526,11 @@ cmd_install() {
 	prompt_fake_domain
 	confirm_install
 	prompt_image_source
+	prompt_install_panel
+
+	if [[ "$INSTALL_PANEL" == "yes" ]] && [[ ! -f "${REPO_ROOT}/install/docker-compose.panel.yml" ]]; then
+		err "Режим «прокси + панель» требует файл install/docker-compose.panel.yml. Запускайте из корня репозитория telemt."
+	fi
 
 	if [[ "$TELEMT_IMAGE_SOURCE" == "build" ]]; then
 		if ! is_build_repo_root "$REPO_ROOT"; then
@@ -451,6 +551,9 @@ cmd_install() {
 
 	copy_and_configure
 	run_compose
+	if [[ "${INSTALL_PANEL:-no}" == "yes" ]]; then
+		create_panel_admin
+	fi
 	print_link
 
 	# When run via curl|bash, offer to save script to current dir for management
@@ -666,7 +769,14 @@ cmd_config() {
 		dir="$result"
 	fi
 
-	if [[ ! -f "${dir}/telemt.toml" ]] || [[ ! -f "${dir}/traefik/dynamic/tcp.yml" ]]; then
+	if [[ ! -f "${dir}/traefik/dynamic/tcp.yml" ]]; then
+		err "Каталог установки не найден или неполный: ${dir}"
+	fi
+	if [[ ! -f "${dir}/telemt.toml" ]] && grep -q "panel:" "${dir}/docker-compose.yml" 2>/dev/null; then
+		info "Режим «прокси + панель»: домен задаётся в ${dir}/.env (FAKE_DOMAIN). Отредактируйте .env и выполните: cd ${dir} && docker compose up -d --force-recreate"
+		return 0
+	fi
+	if [[ ! -f "${dir}/telemt.toml" ]]; then
 		err "Каталог установки не найден или неполный: ${dir}"
 	fi
 	info "Каталог: ${dir}"
