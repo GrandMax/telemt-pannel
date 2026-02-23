@@ -14,15 +14,13 @@ jobs:
 
     permissions:
       contents: read
-      actions: write
-      checks: write
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
     - name: Install Rust toolchain (1.88+ for edition 2024 and time/chrono deps)
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@888c2e1ea69ab0d4330cbf0af1ecc7b68f368cc1 # v1
       with:
         toolchain: 1.88
         components: rustfmt, clippy
@@ -31,7 +29,7 @@ jobs:
       run: rustc --version && cargo --version
 
     - name: Cache cargo registry & build artifacts
-      uses: actions/cache@v4
+      uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
       with:
         path: |
           ~/.cargo/registry
