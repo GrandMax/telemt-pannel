@@ -6,13 +6,13 @@
 set -e
 
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
-INSTALL_DIR="${INSTALL_DIR:-$(pwd)/mtpannel-data}"
+INSTALL_DIR="${INSTALL_DIR:-/opt/mtpannel-data}"
 FAKE_DOMAIN="${FAKE_DOMAIN:-pikabu.ru}"
 TELEMT_INTERNAL_PORT="${TELEMT_INTERNAL_PORT:-1234}"
 LISTEN_PORT="${LISTEN_PORT:-443}"
 TELEMT_PREBUILT_IMAGE="${TELEMT_PREBUILT_IMAGE:-grandmax/telemt-pannel:latest}"
 TELEMT_IMAGE_SOURCE="${TELEMT_IMAGE_SOURCE:-prebuilt}"
-SCRIPT_VERSION="1.0.2"
+SCRIPT_VERSION="1.0.3"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -276,7 +276,7 @@ ensure_install_templates() {
 		info "Шаблоны не найдены. Пытаюсь скачать с GitHub..."
 	fi
 
-	local cache="${HOME:-/tmp}/.mtpannel-templates"
+	local cache="/opt/mtpannel-templates"
 	mkdir -p "${cache}/install"
 	for f in $required; do
 		if ! curl -sSL -o "${cache}/install/${f}" "${TELEMT_INSTALL_BASE_URL}/${f}"; then
@@ -436,7 +436,7 @@ cmd_install() {
 		if ! is_build_repo_root "$REPO_ROOT"; then
 			ensure_git
 			mkdir -p "${INSTALL_DIR}"
-			CLONE_DIR="${INSTALL_DIR}/.telemt-source"
+			CLONE_DIR="/opt/mtpannel-telemt-source"
 			if [[ -d "${CLONE_DIR}/.git" ]]; then
 				info "Обновляю клон репозитория в ${CLONE_DIR} ..."
 				(cd "${CLONE_DIR}" && git pull --depth 1 2>/dev/null) || true
@@ -560,7 +560,7 @@ get_install_dir() {
 # Usage: dir=$(prompt_install_dir_existing)  # interactive
 # Or: dir=$(prompt_install_dir_existing "/path/default" "offer")  # on dir missing, offer new install (returns INSTALL:<path> if user agrees)
 prompt_install_dir_existing() {
-	local default="${1:-$(pwd)/mtpannel-data}"
+	local default="${1:-/opt/mtpannel-data}"
 	local offer_install="${2:-}"
 	default="$(resolve_install_dir "$default")"
 	if [[ -t 0 ]]; then
