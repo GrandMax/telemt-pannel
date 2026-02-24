@@ -4,7 +4,7 @@
 services:
   traefik:
     image: traefik:v3.6
-    container_name: mtpannel-traefik
+    container_name: mtpanel-traefik
     restart: unless-stopped
     command:
       - "--api.dashboard=false"
@@ -17,11 +17,11 @@ services:
       - ./traefik/static:/etc/traefik/static:ro
       - ./traefik/dynamic:/etc/traefik/dynamic:ro
     networks:
-      - mtpannel
+      - mtpanel
 
   telemt:
     image: grandmax/telemt:latest
-    container_name: mtpannel-telemt
+    container_name: mtpanel-telemt
     restart: unless-stopped
     command: ["/app/config/config.toml"]
     environment:
@@ -29,7 +29,7 @@ services:
     volumes:
       - telemt-config:/app/config:ro
     networks:
-      - mtpannel
+      - mtpanel
     depends_on:
       panel:
         condition: service_healthy
@@ -55,7 +55,7 @@ services:
 
   panel:
     image: grandmax/telemt-panel:latest
-    container_name: mtpannel-panel
+    container_name: mtpanel-panel
     restart: unless-stopped
     ports:
       - "${PANEL_PORT:-8080}:8080"
@@ -70,19 +70,19 @@ services:
       - panel-data:/app/data:rw
     environment:
       - TELEMT_CONFIG_PATH=/app/telemt-config/config.toml
-      - TELEMT_METRICS_URL=http://mtpannel-telemt:9090/metrics
+      - TELEMT_METRICS_URL=http://mtpanel-telemt:9090/metrics
       - DATABASE_URL=sqlite:////app/data/panel.db
       - SECRET_KEY=${PANEL_SECRET_KEY}
       - PROXY_HOST=${PROXY_HOST:-localhost}
       - PROXY_PORT=${LISTEN_PORT:-443}
       - TLS_DOMAIN=${FAKE_DOMAIN:-example.com}
     networks:
-      - mtpannel
+      - mtpanel
 
 volumes:
   telemt-config:
   panel-data:
 
 networks:
-  mtpannel:
+  mtpanel:
     driver: bridge

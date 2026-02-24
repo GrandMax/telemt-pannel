@@ -7,16 +7,16 @@
 ## Требования
 
 - Docker и Docker Compose (скрипт при необходимости предложит установить Docker).
-- **Готовый образ (prebuilt):** скрипт можно запускать из любого каталога или через `curl ... | bash`; если локальных шаблонов нет — шаблоны скачиваются в каталог, заданный `TEMPLATES_CACHE_DIR`, или по умолчанию в `<INSTALL_DIR>/.mtpannel-templates` (установка без root возможна при свой каталог установки).
+- **Готовый образ (prebuilt):** скрипт можно запускать из любого каталога или через `curl ... | bash`; если локальных шаблонов нет — шаблоны скачиваются в каталог, заданный `TEMPLATES_CACHE_DIR`, или по умолчанию в `<INSTALL_DIR>/.mtpanel-templates` (установка без root возможна при свой каталог установки).
 - **Сборка из исходников (build):** если скрипт запущен не из каталога с репозиторием (нет `install/`, `Dockerfile`), он клонирует [GrandMax/telemt-panel](https://github.com/GrandMax/telemt-panel) в каталог из `CLONE_DIR` или по умолчанию в `<INSTALL_DIR>/.telemt-source`. Для клонирования нужен **git**; при отсутствии скрипт попытается установить его (apt-get/dnf/yum), иначе нужно установить вручную.
 
 Каталоги по умолчанию:
 
-- **Каталог установки**: `/opt/mtpannel-data` (переменная `INSTALL_DIR`)
-- **Шаблоны (при скачивании)**: `<INSTALL_DIR>/.mtpannel-templates` или `$HOME/.mtpannel-templates` (переопределяется через `TEMPLATES_CACHE_DIR`)
+- **Каталог установки**: `/opt/mtpanel-data` (переменная `INSTALL_DIR`)
+- **Шаблоны (при скачивании)**: `<INSTALL_DIR>/.mtpanel-templates` или `$HOME/.mtpanel-templates` (переопределяется через `TEMPLATES_CACHE_DIR`)
 - **Клон исходников (build)**: `<INSTALL_DIR>/.telemt-source` (переопределяется через `CLONE_DIR`)
 
-При установке без root задайте свой каталог, например `INSTALL_DIR=$HOME/mtpannel-data` — кэш шаблонов и клон репозитория по умолчанию будут внутри него.
+При установке без root задайте свой каталог, например `INSTALL_DIR=$HOME/mtpanel-data` — кэш шаблонов и клон репозитория по умолчанию будут внутри него.
 
 ## Установка и управление
 
@@ -36,7 +36,7 @@
 
 Выберите пункт (1–5). Дальше скрипт запросит все нужные параметры диалогами: каталог установки, порт, домен для Fake TLS (SNI), подтверждения. Управление полностью внутри скрипта, без ключей в командной строке.
 
-При выборе **Установка** по шагам запрашиваются: каталог (по умолчанию `/opt/mtpannel-data`), порт (443 или 1443 при занятости), домен маскировки (по умолчанию `1c.ru`), **способ получения образа telemt** (1 — собрать из исходников локально, 2 — скачать готовый образ из `grandmax/telemt:latest`), подтверждение. В конце выводится ссылка `tg://proxy?server=...&port=...&secret=...` — добавьте её в Telegram (Настройки → Данные и память → Использовать прокси).
+При выборе **Установка** по шагам запрашиваются: каталог (по умолчанию `/opt/mtpanel-data`), порт (443 или 1443 при занятости), домен маскировки (по умолчанию `1c.ru`), **способ получения образа telemt** (1 — собрать из исходников локально, 2 — скачать готовый образ из `grandmax/telemt:latest`), подтверждение. В конце выводится ссылка `tg://proxy?server=...&port=...&secret=...` — добавьте её в Telegram (Настройки → Данные и память → Использовать прокси).
 
 ## Режим без меню (автоматизация)
 
@@ -55,20 +55,20 @@
 
 | Переменная | Описание | По умолчанию |
 |------------|----------|--------------|
-| `INSTALL_DIR` | Каталог установки | `/opt/mtpannel-data` |
+| `INSTALL_DIR` | Каталог установки | `/opt/mtpanel-data` |
 | `LISTEN_PORT` | Порт прокси на хосте | `443` |
 | `FAKE_DOMAIN` | Домен для Fake TLS (SNI) | `1c.ru` |
 | `FAKE_DOMAIN_FROM_ENV` | То же (приоритет при установке) | — |
 | `TELEMT_INTERNAL_PORT` | Внутренний порт telemt в Docker | `1234` |
 | `TELEMT_IMAGE_SOURCE` | Источник образа: `build` (сборка из исходников) или `prebuilt` (скачать готовый) | `prebuilt` |
 | `TELEMT_PREBUILT_IMAGE` | Имя готового образа при `TELEMT_IMAGE_SOURCE=prebuilt` | `grandmax/telemt:latest` |
-| `TEMPLATES_CACHE_DIR` | Каталог кэша шаблонов (при скачивании с GitHub) | `<INSTALL_DIR>/.mtpannel-templates` или `$HOME/.mtpannel-templates` |
+| `TEMPLATES_CACHE_DIR` | Каталог кэша шаблонов (при скачивании с GitHub) | `<INSTALL_DIR>/.mtpanel-templates` или `$HOME/.mtpanel-templates` |
 | `CLONE_DIR` | Каталог клона репозитория при сборке из исходников | `<INSTALL_DIR>/.telemt-source` |
 
 Пример неинтерактивной установки:
 
 ```bash
-INSTALL_DIR=/opt/mtpannel FAKE_DOMAIN=sberbank.ru ./install.sh install
+INSTALL_DIR=/opt/mtpanel FAKE_DOMAIN=sberbank.ru ./install.sh install
 ```
 
 ## Смена домена (SNI)

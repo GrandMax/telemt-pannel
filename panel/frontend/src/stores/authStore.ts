@@ -10,6 +10,6 @@ export const useAuthStore = create<{
       token: null,
       setToken: (token) => set({ token }),
     }),
-    { name: "mtpannel-auth" }
+    { name: "mtpanel-auth" }
   )
 );

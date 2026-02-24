@@ -4,7 +4,7 @@
 services:
   traefik:
     image: traefik:v3.6
-    container_name: mtpannel-traefik
+    container_name: mtpanel-traefik
     restart: unless-stopped
     command:
       - "--api.dashboard=false"
@@ -17,21 +17,21 @@ services:
       - ./traefik/static:/etc/traefik/static:ro
       - ./traefik/dynamic:/etc/traefik/dynamic:ro
     networks:
-      - mtpannel
+      - mtpanel
 
   telemt:
     build:
       context: ${REPO_ROOT}
       dockerfile: ${REPO_ROOT}/Dockerfile
     image: telemt:local
-    container_name: mtpannel-telemt
+    container_name: mtpanel-telemt
     restart: unless-stopped
     environment:
       RUST_LOG: "info"
     volumes:
       - ./telemt.toml:/app/config.toml:ro
     networks:
-      - mtpannel
+      - mtpanel
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -53,5 +53,5 @@ services:
         max-file: "3"
 
 networks:
-  mtpannel:
+  mtpanel:
     driver: bridge

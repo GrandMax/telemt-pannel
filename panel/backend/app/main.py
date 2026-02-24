@@ -90,4 +90,4 @@ else:
 
     @app.get("/")
     def root():
-        return {"service": "mtpannel-panel", "docs": "/docs"}
+        return {"service": "mtpanel-panel", "docs": "/docs"}

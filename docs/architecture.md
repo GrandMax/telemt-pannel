@@ -1,4 +1,4 @@
-# Архитектура панели управления MTProxy (mtpannel)
+# Архитектура панели управления MTProxy (mtpanel)
 
 Документ описывает взаимодействие панели управления с telemt MTProxy: контейнеры, API, схему БД, формат config.toml и протокол обмена данными.
 
@@ -31,13 +31,13 @@
 
 | Контейнер           | Образ              | Порты (хост)   | Назначение                    |
 |---------------------|--------------------|----------------|-------------------------------|
-| mtpannel-traefik    | traefik:v3.6       | 443            | SNI-маршрутизация, TLS       |
-| mtpannel-telemt     | telemt:local       | — (внутр. 1234)| MTProxy (Rust), метрики :9090 |
-| mtpannel-panel      | panel:local        | 8080           | REST API + Web UI (FastAPI)  |
+| mtpanel-traefik    | traefik:v3.6       | 443            | SNI-маршрутизация, TLS       |
+| mtpanel-telemt     | telemt:local       | — (внутр. 1234)| MTProxy (Rust), метрики :9090 |
+| mtpanel-panel      | panel:local        | 8080           | REST API + Web UI (FastAPI)  |
 
 **Связи:**
 - Panel и Telemt разделяют Docker volume с одним файлом `config.toml`. Panel пишет конфиг, Telemt читает и подхватывает изменения через hot-reload (inotify/poll).
-- Panel по внутренней сети обращается к Telemt: `http://mtpannel-telemt:9090/metrics` для скрейпинга Prometheus.
+- Panel по внутренней сети обращается к Telemt: `http://mtpanel-telemt:9090/metrics` для скрейпинга Prometheus.
 
 ## 2. API панели (REST, OpenAPI)
 
@@ -184,7 +184,7 @@
 
 ### 5.2 Метрики (HTTP)
 
-- Panel по расписанию (например каждые 30 с) выполняет GET `http://mtpannel-telemt:9090/metrics`.
+- Panel по расписанию (например каждые 30 с) выполняет GET `http://mtpanel-telemt:9090/metrics`.
 - Парсится текст Prometheus: строки вида  
   `telemt_user_octets_from_client{user="username"} N` и  
   `telemt_user_octets_to_client{user="username"} N`,  
@@ -216,7 +216,7 @@
 | DATABASE_URL         | SQLite URL                            | sqlite:////app/data/panel.db |
 | SECRET_KEY           | Секрет для JWT                        | строка из openssl rand |
 | TELEMT_CONFIG_PATH   | Путь к config.toml на shared volume   | /app/telemt-config/config.toml |
-| TELEMT_METRICS_URL   | URL метрик telemt                     | http://mtpannel-telemt:9090/metrics |
+| TELEMT_METRICS_URL   | URL метрик telemt                     | http://mtpanel-telemt:9090/metrics |
 | PROXY_HOST           | Хост для ссылок (IP или домен)        | proxy.example.com |
 | PROXY_PORT           | Порт для ссылок                       | 443 |
 | TLS_DOMAIN           | Домен Fake TLS (EE)                   | example.com |

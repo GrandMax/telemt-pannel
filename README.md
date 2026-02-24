@@ -1,4 +1,4 @@
-# MTPannel + MTProxy (Fake TLS) + Traefik
+# MTPanel + MTProxy (Fake TLS) + Traefik
 
 > Автор не является владельцем или поставщиком VPN/Proxy-конфигураций. Данный материал не является рекламой VPN/Proxy и предназначен исключительно в информационных целях, только для граждан тех стран, где использование такой информации легально (в том числе в научных и образовательных целях). Автор не имеет намерений побуждать, поощрять или оправдывать использование VPN/Proxy. Отказ от ответственности: автор не несёт ответственности за действия третьих лиц и не поощряет противоправное использование технологий. Используйте прокси и VPN только в соответствии с местным законодательством и исключительно в законных целях — например, для обеспечения безопасности в сети и защищённого удалённого доступа; не применяйте данную технологию для обхода блокировок или иных противоправных действий.
 
@@ -23,12 +23,12 @@ curl -sSL https://raw.githubusercontent.com/GrandMax/telemt-panel/main/install.s
 
 Скрипт установит Docker (если нужно), создаст каталог установки, скачает или соберёт образ telemt, настроит Traefik и выведет ссылку вида `tg://proxy?server=...&port=443&secret=...` — добавьте её в Telegram (Настройки → Данные и память → Использовать прокси).
 
-- Каталог установки по умолчанию: `/opt/mtpannel-data`. Другой: `INSTALL_DIR=/opt/mtpannel bash install.sh` (или через env при `curl ... | bash`).
+- Каталог установки по умолчанию: `/opt/mtpanel-data`. Другой: `INSTALL_DIR=/opt/mtpanel bash install.sh` (или через env при `curl ... | bash`).
 - Домен маскировки по умолчанию задаётся в скрипте (например `pikabu.ru`). Без TTY: `FAKE_DOMAIN=1c.ru bash install.sh`.
 
 ## Локальный запуск (клонирование репозитория)
 
-После `git clone https://github.com/GrandMax/telemt-panel.git && cd telemt-panel` запустите `./install.sh`. Скрипт по умолчанию использует шаблоны из текущего каталога. Если скрипт запущен через `curl | bash` и шаблонов нет локально — он скачает их в `/opt/mtpannel-templates`. При выборе «Собрать из исходников» (build) и запуске не из корня репозитория — скрипт при необходимости клонирует репозиторий в `/opt/mtpannel-telemt-source` и собирает образ оттуда. Либо настройте вручную и поднимите без скрипта:
+После `git clone https://github.com/GrandMax/telemt-panel.git && cd telemt-panel` запустите `./install.sh`. Скрипт по умолчанию использует шаблоны из текущего каталога. Если скрипт запущен через `curl | bash` и шаблонов нет локально — он скачает их в `/opt/mtpanel-templates`. При выборе «Собрать из исходников» (build) и запуске не из корня репозитория — скрипт при необходимости клонирует репозиторий в `/opt/mtpanel-telemt-source` и собирает образ оттуда. Либо настройте вручную и поднимите без скрипта:
 
 1. Сгенерируйте секрет: `openssl rand -hex 16`. Скопируйте `install/telemt.toml.example` в каталог установки как `telemt.toml`, подставьте секрет и домен в `tls_domain`.
 2. В `traefik/dynamic/tcp.yml` домен в `HostSNI(...)` должен совпадать с `tls_domain` в `telemt.toml`.
@@ -43,14 +43,14 @@ curl -sSL https://raw.githubusercontent.com/GrandMax/telemt-panel/main/install.s
 curl -sSL https://raw.githubusercontent.com/GrandMax/telemt-panel/main/install.sh | bash -s uninstall
 ```
 
-Каталог по умолчанию — `/opt/mtpannel-data`. Другой каталог или без подтверждения: `./install.sh uninstall -y /path/to/mtpannel-data`.
+Каталог по умолчанию — `/opt/mtpanel-data`. Другой каталог или без подтверждения: `./install.sh uninstall -y /path/to/mtpanel-data`.
 
 Пошагово без скрипта: перейдите в каталог установки, выполните `docker compose down`, затем удалите каталог (конфиги и секрет).
 
 ## Структура после установки
 
 ```text
-/opt/mtpannel-data/
+/opt/mtpanel-data/
 ├── docker-compose.yml
 ├── telemt.toml
 └── traefik/
@@ -61,7 +61,7 @@ curl -sSL https://raw.githubusercontent.com/GrandMax/telemt-panel/main/install.s
 
 ## Полезные команды
 
-- Логи: `cd /opt/mtpannel-data && docker compose logs -f`
+- Логи: `cd /opt/mtpanel-data && docker compose logs -f`
 - Остановка: `docker compose down`
 - Перезапуск после смены конфига: `docker compose up -d --force-recreate`
 - После рестарта сервера контейнеры поднимутся сами (`restart: unless-stopped`). Включите Docker при загрузке: `sudo systemctl enable docker`.

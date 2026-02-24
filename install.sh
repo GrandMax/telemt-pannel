@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# MTpannel installer: fully interactive menu when run with no args (TTY).
+# MTPanel installer: fully interactive menu when run with no args (TTY).
 # Uses local templates from install/; builds telemt from repo Dockerfile.
 # Non-interactive: pass action as first arg and use env vars (INSTALL_DIR, LISTEN_PORT, FAKE_DOMAIN, etc.).
 
 set -e
 
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
-INSTALL_DIR="${INSTALL_DIR:-/opt/mtpannel-data}"
+INSTALL_DIR="${INSTALL_DIR:-/opt/mtpanel-data}"
 FAKE_DOMAIN="${FAKE_DOMAIN:-pikabu.ru}"
 TELEMT_INTERNAL_PORT="${TELEMT_INTERNAL_PORT:-1234}"
 LISTEN_PORT="${LISTEN_PORT:-443}"
@@ -129,9 +129,9 @@ prompt_install_dir() {
 		return
 	fi
 	if [[ -t 0 ]]; then
-		local opt_dir="/opt/mtpannel-data"
+		local opt_dir="/opt/mtpanel-data"
 		local cur_dir
-		cur_dir="$(pwd)/mtpannel-data"
+		cur_dir="$(pwd)/mtpanel-data"
 		echo "" >&2
 		echo "Выберите каталог установки:" >&2
 		echo "  1) ${opt_dir}  (рекомендуется)" >&2
@@ -324,7 +324,7 @@ ensure_install_templates() {
 		info "Шаблоны не найдены. Пытаюсь скачать с GitHub..."
 	fi
 
-	local cache="/opt/mtpannel-templates"
+	local cache="/opt/mtpanel-templates"
 	mkdir -p "${cache}/install"
 	for f in $required; do
 		if ! curl -sSL -o "${cache}/install/${f}" "${TELEMT_INSTALL_BASE_URL}/${f}"; then
@@ -748,7 +748,7 @@ is_valid_install_dir() {
 # Usage: dir=$(prompt_install_dir_existing)  # interactive
 # Or: dir=$(prompt_install_dir_existing "/path/default" "offer")  # on dir missing, offer new install (returns INSTALL:<path> if user agrees)
 prompt_install_dir_existing() {
-	local default="${1:-/opt/mtpannel-data}"
+	local default="${1:-/opt/mtpanel-data}"
 	local offer_install="${2:-}"
 	default="$(resolve_install_dir "$default")"
 	if [[ -t 0 ]]; then
