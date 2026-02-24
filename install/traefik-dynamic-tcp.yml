@@ -15,3 +15,5 @@ tcp:
       loadBalancer:
         servers:
           - address: "telemt:TELEMT_PORT_PLACEHOLDER"
+            proxyProtocol:
+              version: 2

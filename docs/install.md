@@ -80,6 +80,26 @@ INSTALL_DIR=/opt/mtpanel FAKE_DOMAIN=sberbank.ru ./install.sh install
 
 Обновляются `telemt.toml` (поле `tls_domain`) и правило SNI в `traefik/dynamic/tcp.yml`; контейнеры перезапускаются, выводится новая ссылка для Telegram.
 
+## Реальный IP клиента за Traefik (Unique IPs)
+
+При работе за Traefik (TLS passthrough) telemt по умолчанию видит только IP контейнера Traefik, а не реальный IP клиента. Для корректных логов и подсчёта Unique IPs в панели используется **PROXY protocol**: Traefik отправляет заголовок с адресом клиента, telemt его разбирает и подставляет реальный peer.
+
+**Новые установки** (через текущий `install.sh`) уже получают в шаблонах и Traefik (отправка PROXY v2), и telemt (`proxy_protocol = true` в `[server]`), менять ничего не нужно.
+
+**Уже развёрнутые установки** (без PROXY protocol) нужно донастроить вручную:
+
+1. В `telemt.toml` в секции `[server]` добавьте строку:  
+   `proxy_protocol = true`
+2. В `traefik/dynamic/tcp.yml` у сервиса `mtpanel` в `loadBalancer.servers` у единственного элемента `- address: "telemt:1234"` добавьте под ним:
+   ```yaml
+   proxyProtocol:
+     version: 2
+   ```
+3. Перезапустите контейнеры:  
+   `docker compose up -d --force-recreate`
+
+Оба параметра должны быть включены одновременно: иначе либо telemt будет отклонять соединения (ожидает заголовок), либо продолжит видеть только IP Traefik.
+
 ## Сборка и публикация образа (для сопровождающих)
 
 Чтобы собрать образ telemt и опубликовать его в репозиторий `grandmax/telemt` (для установки по варианту «готовый образ»):

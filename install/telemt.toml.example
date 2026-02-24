@@ -18,6 +18,7 @@ tls = true
 port = TELEMT_PORT_PLACEHOLDER
 listen_addr_ipv4 = "0.0.0.0"
 listen_addr_ipv6 = "::"
+proxy_protocol = true   # required when behind Traefik for real client IP / Unique IPs
 
 [censorship]
 tls_domain = "pikabu.ru"
