@@ -11,9 +11,10 @@ use ipnetwork::IpNetwork;
 use tokio::net::TcpListener;
 use tracing::{info, warn, debug};
 
+use crate::ip_tracker::UserIpTracker;
 use crate::stats::Stats;
 
-pub async fn serve(port: u16, stats: Arc<Stats>, whitelist: Vec<IpNetwork>) {
+pub async fn serve(port: u16, stats: Arc<Stats>, ip_tracker: Arc<UserIpTracker>, whitelist: Vec<IpNetwork>) {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = match TcpListener::bind(addr).await {
         Ok(l) => l,
@@ -39,10 +40,15 @@ pub async fn serve(port: u16, stats: Arc<Stats>, whitelist: Vec<IpNetwork>) {
         }
 
         let stats = stats.clone();
+        let ip_tracker = ip_tracker.clone();
         tokio::spawn(async move {
             let svc = service_fn(move |req| {
                 let stats = stats.clone();
-                async move { handle(req, &stats) }
+                let ip_tracker = ip_tracker.clone();
+                async move {
+                    let ip_stats = ip_tracker.get_stats().await;
+                    handle(req, &stats, &ip_stats)
+                }
             });
             if let Err(e) = http1::Builder::new()
                 .serve_connection(hyper_util::rt::TokioIo::new(stream), svc)
@@ -54,7 +60,11 @@ pub async fn serve(port: u16, stats: Arc<Stats>, whitelist: Vec<IpNetwork>) {
     }
 }
 
-fn handle<B>(req: Request<B>, stats: &Stats) -> Result<Response<Full<Bytes>>, Infallible> {
+fn handle<B>(
+    req: Request<B>,
+    stats: &Stats,
+    ip_stats: &[(String, usize, usize)],
+) -> Result<Response<Full<Bytes>>, Infallible> {
     if req.uri().path() != "/metrics" {
         let resp = Response::builder()
             .status(StatusCode::NOT_FOUND)
@@ -63,7 +73,7 @@ fn handle<B>(req: Request<B>, stats: &Stats) -> Result<Response<Full<Bytes>>, In
         return Ok(resp);
     }
 
-    let body = render_metrics(stats);
+    let body = render_metrics(stats, ip_stats);
     let resp = Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "text/plain; version=0.0.4; charset=utf-8")
@@ -72,7 +82,7 @@ fn handle<B>(req: Request<B>, stats: &Stats) -> Result<Response<Full<Bytes>>, In
     Ok(resp)
 }
 
-fn render_metrics(stats: &Stats) -> String {
+fn render_metrics(stats: &Stats, ip_stats: &[(String, usize, usize)]) -> String {
     use std::fmt::Write;
     let mut out = String::with_capacity(4096);
 
@@ -132,6 +142,12 @@ fn render_metrics(stats: &Stats) -> String {
         let _ = writeln!(out, "telemt_user_msgs_to_client{{user=\"{}\"}} {}", user, s.msgs_to_client.load(std::sync::atomic::Ordering::Relaxed));
     }
 
+    let _ = writeln!(out, "# HELP telemt_user_unique_ips_active Per-user count of currently connected unique IPs");
+    let _ = writeln!(out, "# TYPE telemt_user_unique_ips_active gauge");
+    for (username, active_count, _limit) in ip_stats {
+        let _ = writeln!(out, "telemt_user_unique_ips_active{{user=\"{}\"}} {}", username, active_count);
+    }
+
     out
 }
 
@@ -156,7 +172,7 @@ mod tests {
         stats.increment_user_msgs_to("alice");
         stats.increment_user_msgs_to("alice");
 
-        let output = render_metrics(&stats);
+        let output = render_metrics(&stats, &[]);
 
         assert!(output.contains("telemt_connections_total 2"));
         assert!(output.contains("telemt_connections_bad_total 1"));
@@ -172,7 +188,7 @@ mod tests {
     #[test]
     fn test_render_empty_stats() {
         let stats = Stats::new();
-        let output = render_metrics(&stats);
+        let output = render_metrics(&stats, &[]);
         assert!(output.contains("telemt_connections_total 0"));
         assert!(output.contains("telemt_connections_bad_total 0"));
         assert!(output.contains("telemt_handshake_timeouts_total 0"));
@@ -182,7 +198,7 @@ mod tests {
     #[test]
     fn test_render_has_type_annotations() {
         let stats = Stats::new();
-        let output = render_metrics(&stats);
+        let output = render_metrics(&stats, &[]);
         assert!(output.contains("# TYPE telemt_uptime_seconds gauge"));
         assert!(output.contains("# TYPE telemt_connections_total counter"));
         assert!(output.contains("# TYPE telemt_connections_bad_total counter"));
@@ -200,7 +216,7 @@ mod tests {
             .uri("/metrics")
             .body(())
             .unwrap();
-        let resp = handle(req, &stats).unwrap();
+        let resp = handle(req, &stats, &[]).unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         assert!(std::str::from_utf8(body.as_ref()).unwrap().contains("telemt_connections_total 3"));
@@ -209,7 +225,7 @@ mod tests {
             .uri("/other")
             .body(())
             .unwrap();
-        let resp404 = handle(req404, &stats).unwrap();
+        let resp404 = handle(req404, &stats, &[]).unwrap();
         assert_eq!(resp404.status(), StatusCode::NOT_FOUND);
     }
 }

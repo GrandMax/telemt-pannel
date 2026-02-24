@@ -12,13 +12,13 @@
 **Рекомендуемый способ** — сначала скачать скрипт, затем запустить (скрипт остаётся в каталоге для меню управления: обновление, смена домена, удаление):
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/GrandMax/telemt-pannel/main/install.sh -o install.sh && chmod +x install.sh && bash install.sh
+curl -sSL https://raw.githubusercontent.com/GrandMax/telemt-panel/main/install.sh -o install.sh && chmod +x install.sh && bash install.sh
 ```
 
 **Альтернатива** — запуск без сохранения скрипта (одной строкой). Меню выбора действий (1–5) показывается интерактивно; для последующего управления установкой скрипт нужно будет скачать снова или использовать сохранённую копию:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/GrandMax/telemt-pannel/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/GrandMax/telemt-panel/main/install.sh | bash
 ```
 
 Скрипт установит Docker (если нужно), создаст каталог установки, скачает или соберёт образ telemt, настроит Traefik и выведет ссылку вида `tg://proxy?server=...&port=443&secret=...` — добавьте её в Telegram (Настройки → Данные и память → Использовать прокси).
@@ -28,7 +28,7 @@ curl -sSL https://raw.githubusercontent.com/GrandMax/telemt-pannel/main/install.
 
 ## Локальный запуск (клонирование репозитория)
 
-После `git clone https://github.com/GrandMax/telemt-pannel.git && cd telemt-pannel` запустите `./install.sh`. Скрипт по умолчанию использует шаблоны из текущего каталога. Если скрипт запущен через `curl | bash` и шаблонов нет локально — он скачает их в `/opt/mtpannel-templates`. При выборе «Собрать из исходников» (build) и запуске не из корня репозитория — скрипт при необходимости клонирует репозиторий в `/opt/mtpannel-telemt-source` и собирает образ оттуда. Либо настройте вручную и поднимите без скрипта:
+После `git clone https://github.com/GrandMax/telemt-panel.git && cd telemt-panel` запустите `./install.sh`. Скрипт по умолчанию использует шаблоны из текущего каталога. Если скрипт запущен через `curl | bash` и шаблонов нет локально — он скачает их в `/opt/mtpannel-templates`. При выборе «Собрать из исходников» (build) и запуске не из корня репозитория — скрипт при необходимости клонирует репозиторий в `/opt/mtpannel-telemt-source` и собирает образ оттуда. Либо настройте вручную и поднимите без скрипта:
 
 1. Сгенерируйте секрет: `openssl rand -hex 16`. Скопируйте `install/telemt.toml.example` в каталог установки как `telemt.toml`, подставьте секрет и домен в `tls_domain`.
 2. В `traefik/dynamic/tcp.yml` домен в `HostSNI(...)` должен совпадать с `tls_domain` в `telemt.toml`.
@@ -40,7 +40,7 @@ curl -sSL https://raw.githubusercontent.com/GrandMax/telemt-pannel/main/install.
 Скриптом (из каталога с репозиторием или скачав скрипт):
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/GrandMax/telemt-pannel/main/install.sh | bash -s uninstall
+curl -sSL https://raw.githubusercontent.com/GrandMax/telemt-panel/main/install.sh | bash -s uninstall
 ```
 
 Каталог по умолчанию — `/opt/mtpannel-data`. Другой каталог или без подтверждения: `./install.sh uninstall -y /path/to/mtpannel-data`.

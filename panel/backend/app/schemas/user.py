@@ -34,6 +34,8 @@ class UserResponse(BaseModel):
     expire_at: Optional[datetime] = None
     note: Optional[str] = None
     created_at: datetime
+    last_seen_at: Optional[datetime] = None
+    active_unique_ips: Optional[int] = None
     proxy_links: Optional[dict[str, str]] = None  # tg_link, https_link when requested
 
 

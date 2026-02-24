@@ -15,6 +15,18 @@
    `docker compose exec panel cat /app/telemt-config/config.toml` — в секции `[access.users]` должен быть пользователь, созданный через панель. Telemt подхватывает изменения без перезапуска.
 5. **Проверка ссылки:** подставить полученную ссылку в Telegram (Настройки → Данные и память → Использовать прокси).
 
+### Диагностика (логи и config.toml)
+
+Из каталога установки (`INSTALL_DIR`):
+
+- Логи telemt: `docker compose logs telemt` (или `docker compose logs --tail=50 telemt`)
+- Логи панели: `docker compose logs panel --tail=50`
+- Содержимое config.toml в volume (должны быть `[access.users]` и `server.port = 1234`):  
+  `docker compose exec panel cat /app/telemt-config/config.toml`
+- Статус контейнеров: `docker compose ps`
+
+Если telemt пишет «No users configured» — панель ещё не записала config (создайте пользователя в панели). Если telemt слушает не на порту 1234 — в config был неверный `server.port`; панель при первом запуске без существующего config теперь подставляет 1234.
+
 ## 1. Обзор контейнеров
 
 | Контейнер           | Образ              | Порты (хост)   | Назначение                    |

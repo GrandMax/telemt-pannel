@@ -17,3 +17,5 @@ class User(Base):
     note = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     created_by_admin_id = Column(Integer, ForeignKey("admins.id"), nullable=True)
+    last_seen_at = Column(DateTime(timezone=True), nullable=True)
+    active_unique_ips = Column(Integer, nullable=True)

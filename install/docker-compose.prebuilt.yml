@@ -19,7 +19,7 @@ services:
       - mtpannel
 
   telemt:
-    image: grandmax/telemt-pannel:latest
+    image: grandmax/telemt:latest
     container_name: mtpannel-telemt
     restart: unless-stopped
     environment:

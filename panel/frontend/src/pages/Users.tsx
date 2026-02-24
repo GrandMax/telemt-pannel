@@ -26,6 +26,7 @@ import {
   Select,
   InputGroup,
   InputRightElement,
+  Tooltip,
 } from "@chakra-ui/react";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -96,6 +97,8 @@ export default function Users() {
               <Th>Data used</Th>
               <Th>Data limit</Th>
               <Th>Expires</Th>
+              <Th>Last seen</Th>
+              <Th title="Currently connected unique IPs">Unique IPs</Th>
               <Th>Actions</Th>
             </Tr>
           </Thead>
@@ -231,7 +234,9 @@ function UserFormFields({
         />
       </FormControl>
       <FormControl mb={3}>
-        <FormLabel>Max unique IPs</FormLabel>
+        <Tooltip label="Maximum number of unique IPs that can be connected at the same time for this user; new connections from additional IPs are rejected until one disconnects." placement="top" hasArrow>
+          <FormLabel cursor="help">Max unique IPs</FormLabel>
+        </Tooltip>
         <Input
           type="number"
           min={0}
@@ -304,6 +309,8 @@ function UserRow({
         <Td>{formatBytes(user.data_used)}</Td>
         <Td>{user.data_limit != null ? formatBytes(user.data_limit) : "—"}</Td>
         <Td>{user.expire_at ? new Date(user.expire_at).toLocaleString() : "—"}</Td>
+        <Td>{user.last_seen_at ? new Date(user.last_seen_at).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }) : "—"}</Td>
+        <Td>{user.active_unique_ips != null ? String(user.active_unique_ips) : "—"}</Td>
         <Td>
           <HStack gap={1}>
             <Button

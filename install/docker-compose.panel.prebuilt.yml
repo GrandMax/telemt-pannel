@@ -1,0 +1,88 @@
+# Proxy + Panel mode (pre-built images from Docker Hub).
+# No build required — images are pulled from grandmax/telemt and grandmax/telemt-panel.
+
+services:
+  traefik:
+    image: traefik:v3.6
+    container_name: mtpannel-traefik
+    restart: unless-stopped
+    command:
+      - "--api.dashboard=false"
+      - "--entrypoints.websecure.address=:443"
+      - "--providers.file.directory=/etc/traefik/dynamic"
+      - "--providers.file.watch=true"
+    ports:
+      - "${LISTEN_PORT:-443}:443"
+    volumes:
+      - ./traefik/static:/etc/traefik/static:ro
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+    networks:
+      - mtpannel
+
+  telemt:
+    image: grandmax/telemt:latest
+    container_name: mtpannel-telemt
+    restart: unless-stopped
+    command: ["/app/config/config.toml"]
+    environment:
+      RUST_LOG: "info"
+    volumes:
+      - telemt-config:/app/config:ro
+    networks:
+      - mtpannel
+    depends_on:
+      panel:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=16m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  panel:
+    image: grandmax/telemt-panel:latest
+    container_name: mtpannel-panel
+    restart: unless-stopped
+    ports:
+      - "${PANEL_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    volumes:
+      - telemt-config:/app/telemt-config:rw
+      - panel-data:/app/data:rw
+    environment:
+      - TELEMT_CONFIG_PATH=/app/telemt-config/config.toml
+      - TELEMT_METRICS_URL=http://mtpannel-telemt:9090/metrics
+      - DATABASE_URL=sqlite:////app/data/panel.db
+      - SECRET_KEY=${PANEL_SECRET_KEY}
+      - PROXY_HOST=${PROXY_HOST:-localhost}
+      - PROXY_PORT=${LISTEN_PORT:-443}
+      - TLS_DOMAIN=${FAKE_DOMAIN:-example.com}
+    networks:
+      - mtpannel
+
+volumes:
+  telemt-config:
+  panel-data:
+
+networks:
+  mtpannel:
+    driver: bridge

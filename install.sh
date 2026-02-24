@@ -10,8 +10,9 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/mtpannel-data}"
 FAKE_DOMAIN="${FAKE_DOMAIN:-pikabu.ru}"
 TELEMT_INTERNAL_PORT="${TELEMT_INTERNAL_PORT:-1234}"
 LISTEN_PORT="${LISTEN_PORT:-443}"
-TELEMT_PREBUILT_IMAGE="${TELEMT_PREBUILT_IMAGE:-grandmax/telemt-pannel:latest}"
+TELEMT_PREBUILT_IMAGE="${TELEMT_PREBUILT_IMAGE:-grandmax/telemt:latest}"
 TELEMT_IMAGE_SOURCE="${TELEMT_IMAGE_SOURCE:-prebuilt}"
+PANEL_PREBUILT_IMAGE="${PANEL_PREBUILT_IMAGE:-grandmax/telemt-panel:latest}"
 SCRIPT_VERSION="1.0.3"
 
 RED='\033[0;31m'
@@ -128,10 +129,40 @@ prompt_install_dir() {
 		return
 	fi
 	if [[ -t 0 ]]; then
-		local default="${INSTALL_DIR}"
-		echo -n "Каталог установки [${default}]: " >&2
-		read -r input || true
-		if [[ -n "$input" ]]; then INSTALL_DIR="$input"; fi
+		local opt_dir="/opt/mtpannel-data"
+		local cur_dir
+		cur_dir="$(pwd)/mtpannel-data"
+		echo "" >&2
+		echo "Выберите каталог установки:" >&2
+		echo "  1) ${opt_dir}  (рекомендуется)" >&2
+		if [[ "$(resolve_install_dir "$cur_dir")" != "$opt_dir" ]]; then
+			echo "  2) ${cur_dir}  (текущий каталог)" >&2
+			echo "  3) Указать вручную" >&2
+			echo "" >&2
+			echo -n "Вариант [1]: " >&2
+			read -r choice || true
+			choice="${choice:-1}"
+		else
+			echo "  2) Указать вручную" >&2
+			echo "" >&2
+			echo -n "Вариант [1]: " >&2
+			read -r choice || true
+			choice="${choice:-1}"
+			# Remap: if cur_dir == opt_dir, option 2 means "custom"
+			if [[ "$choice" == "2" ]]; then choice="3"; fi
+		fi
+		case "$choice" in
+			1) INSTALL_DIR="$opt_dir" ;;
+			2) INSTALL_DIR="$cur_dir" ;;
+			3)
+				echo -n "Введите путь: " >&2
+				read -r input || true
+				if [[ -n "$input" ]]; then
+					INSTALL_DIR="$input"
+				fi
+				;;
+			*) INSTALL_DIR="$opt_dir" ;;
+		esac
 	fi
 }
 
@@ -229,8 +260,8 @@ confirm_install() {
 prompt_image_source() {
 	if [[ -t 0 ]]; then
 		echo ""
-		echo "Образ telemt:"
-		echo "  1) Скачать готовый образ (${TELEMT_PREBUILT_IMAGE})"
+		echo "Образы Docker:"
+		echo "  1) Скачать готовые образы с Docker Hub (рекомендуется)"
 		echo "  2) Собрать из исходников (локально)"
 		echo -n "Выбор [1]: " >&2
 		read -r input || true
@@ -267,10 +298,10 @@ generate_secret() {
 	openssl rand -hex 16
 }
 
-TELEMT_INSTALL_BASE_URL="${TELEMT_INSTALL_BASE_URL:-https://raw.githubusercontent.com/GrandMax/telemt-pannel/main/install}"
+TELEMT_INSTALL_BASE_URL="${TELEMT_INSTALL_BASE_URL:-https://raw.githubusercontent.com/GrandMax/telemt-panel/main/install}"
 
 ensure_install_templates() {
-	local required="docker-compose.yml docker-compose.prebuilt.yml telemt.toml.example traefik-dynamic-tcp.yml"
+	local required="docker-compose.yml docker-compose.prebuilt.yml docker-compose.panel.yml docker-compose.panel.prebuilt.yml telemt.toml.example traefik-dynamic-tcp.yml"
 	local have_all=1
 	local f
 	for f in $required; do
@@ -283,7 +314,7 @@ ensure_install_templates() {
 
 	if [[ -t 0 ]]; then
 		warn "Шаблоны не найдены в ${REPO_ROOT}/install/."
-		echo -n "Скачать с GitHub (GrandMax/telemt-pannel)? (Y/n): " >&2
+		echo -n "Скачать с GitHub (GrandMax/telemt-panel)? (Y/n): " >&2
 		read -r ans || true
 		ans_lower=$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')
 		if [[ "$ans_lower" == "n" ]] || [[ "$ans_lower" == "no" ]]; then
@@ -311,7 +342,13 @@ copy_and_configure() {
 	mkdir -p "${INSTALL_DIR}/traefik/dynamic" "${INSTALL_DIR}/traefik/static"
 
 	if [[ "${INSTALL_PANEL:-no}" == "yes" ]]; then
-		cp "${REPO_ROOT}/install/docker-compose.panel.yml" "${INSTALL_DIR}/docker-compose.yml"
+		if [[ "$TELEMT_IMAGE_SOURCE" == "prebuilt" ]]; then
+			sed -e "s|image: grandmax/telemt:latest|image: ${TELEMT_PREBUILT_IMAGE}|g" \
+			    -e "s|image: grandmax/telemt-panel:latest|image: ${PANEL_PREBUILT_IMAGE}|g" \
+			    "${REPO_ROOT}/install/docker-compose.panel.prebuilt.yml" > "${INSTALL_DIR}/docker-compose.yml"
+		else
+			cp "${REPO_ROOT}/install/docker-compose.panel.yml" "${INSTALL_DIR}/docker-compose.yml"
+		fi
 		PANEL_SECRET_KEY=$(openssl rand -hex 32)
 		# .env for panel mode
 		{
@@ -326,7 +363,7 @@ copy_and_configure() {
 		info "Режим «прокси + панель». Конфиг прокси будет в volume, панель на порту ${PANEL_PORT:-8080}."
 	else
 		if [[ "$TELEMT_IMAGE_SOURCE" == "prebuilt" ]]; then
-			sed -e "s|image: grandmax/telemt-pannel:latest|image: ${TELEMT_PREBUILT_IMAGE}|g" \
+			sed -e "s|image: grandmax/telemt:latest|image: ${TELEMT_PREBUILT_IMAGE}|g" \
 				"${REPO_ROOT}/install/docker-compose.prebuilt.yml" > "${INSTALL_DIR}/docker-compose.yml"
 		else
 			cp "${REPO_ROOT}/install/docker-compose.yml" "${INSTALL_DIR}/docker-compose.yml"
@@ -358,29 +395,34 @@ create_panel_admin() {
 	[[ -f .env ]] && source .env 2>/dev/null || true
 	local admin_user="${PANEL_ADMIN_USERNAME:-admin}"
 	local admin_pass
+	local pass_generated=0
 	if [[ -t 0 ]]; then
 		echo ""
 		echo "Создание первого администратора панели (sudo)."
 		echo -n "Имя пользователя [${admin_user}]: " >&2
 		read -r input || true
 		if [[ -n "$input" ]]; then admin_user="$input"; fi
-		echo -n "Пароль: " >&2
+		echo -n "Пароль (Enter — сгенерировать случайный): " >&2
 		read -rs admin_pass || true
 		echo "" >&2
 		if [[ -z "$admin_pass" ]]; then
-			warn "Пароль пустой. Создайте админа вручную: cd ${INSTALL_DIR} && docker compose run --rm panel python -m app.cli create-admin --username admin --password YOUR_PASS --sudo"
-			return 0
+			admin_pass=$(openssl rand -base64 12 | tr -d '/+=' | head -c 16)
+			pass_generated=1
+			info "Сгенерирован случайный пароль."
 		fi
 	else
 		admin_pass="${PANEL_ADMIN_PASSWORD:-}"
 		if [[ -z "$admin_pass" ]]; then
-			info "PANEL_ADMIN_PASSWORD не задан. Создайте админа вручную: docker compose run --rm panel python -m app.cli create-admin --username admin --password YOUR_PASS --sudo"
-			return 0
+			admin_pass=$(openssl rand -base64 12 | tr -d '/+=' | head -c 16)
+			pass_generated=1
 		fi
 	fi
 	info "Создание учётной записи администратора..."
 	if docker compose run --rm panel python -m app.cli create-admin --username "$admin_user" --password "$admin_pass" --sudo 2>/dev/null; then
 		info "Администратор ${admin_user} создан."
+		PANEL_CREATED_USER="$admin_user"
+		PANEL_CREATED_PASS="$admin_pass"
+		PANEL_PASS_GENERATED="$pass_generated"
 	else
 		warn "Не удалось создать админа через CLI. Создайте вручную: cd ${INSTALL_DIR} && docker compose run --rm panel python -m app.cli create-admin --username admin --password YOUR_PASS --sudo"
 	fi
@@ -389,8 +431,13 @@ create_panel_admin() {
 run_compose() {
 	cd "${INSTALL_DIR}"
 	if [[ "${INSTALL_PANEL:-no}" == "yes" ]]; then
-		info "Сборка образов telemt и panel, запуск контейнеров..."
-		docker compose build --no-cache 2>/dev/null || docker compose build
+		if [[ "${TELEMT_IMAGE_SOURCE}" == "prebuilt" ]]; then
+			info "Загрузка образов telemt и panel из Docker Hub..."
+			docker compose --progress plain pull
+		else
+			info "Сборка образов telemt и panel..."
+			docker compose build --no-cache 2>/dev/null || docker compose build
+		fi
 		docker compose up -d
 		info "Ожидание готовности панели..."
 		for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -403,7 +450,7 @@ run_compose() {
 	else
 		if [[ "${TELEMT_IMAGE_SOURCE}" == "prebuilt" ]]; then
 			info "Загрузка образа telemt и запуск контейнеров..."
-			docker compose --progress plain pull telemt
+			docker compose --progress plain pull
 			docker compose up -d
 		else
 			info "Сборка образа telemt и запуск контейнеров..."
@@ -424,7 +471,15 @@ print_link() {
 		echo -e "${GREEN}║  Панель управления MTProxy                             ║${NC}"
 		echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
 		echo ""
-		echo -e "  ${GREEN}${panel_url}${NC}"
+		echo -e "  URL:   ${GREEN}${panel_url}${NC}"
+		if [[ -n "${PANEL_CREATED_USER:-}" ]]; then
+			echo -e "  Логин: ${GREEN}${PANEL_CREATED_USER}${NC}"
+			echo -e "  Пароль: ${GREEN}${PANEL_CREATED_PASS}${NC}"
+			if [[ "${PANEL_PASS_GENERATED:-0}" == "1" ]]; then
+				echo ""
+				echo -e "  ${YELLOW}⚠  Пароль сгенерирован автоматически — сохраните его!${NC}"
+			fi
+		fi
 		echo ""
 		echo "  Создайте пользователей в панели — ссылки и QR появятся там."
 		echo "  Данные установки: ${INSTALL_DIR}"
@@ -503,10 +558,10 @@ print_link() {
 
 cmd_install() {
 	INSTALL_DIR="$(resolve_install_dir "$INSTALL_DIR")"
-	info "Начало установки в ${INSTALL_DIR} ..."
 	check_docker
 	prompt_install_dir
 	INSTALL_DIR="$(resolve_install_dir "$INSTALL_DIR")"
+	info "Начало установки в ${INSTALL_DIR} ..."
 	# If directory already has an installation, offer to update instead
 	if [[ -d "$INSTALL_DIR" ]] && [[ -f "${INSTALL_DIR}/docker-compose.yml" ]] && [[ -f "${INSTALL_DIR}/telemt.toml" ]] && [[ -t 0 ]]; then
 		info "В каталоге уже есть установка: ${INSTALL_DIR}"
@@ -528,8 +583,12 @@ cmd_install() {
 	prompt_image_source
 	prompt_install_panel
 
-	if [[ "$INSTALL_PANEL" == "yes" ]] && [[ ! -f "${REPO_ROOT}/install/docker-compose.panel.yml" ]]; then
-		err "Режим «прокси + панель» требует файл install/docker-compose.panel.yml. Запускайте из корня репозитория telemt."
+	if [[ "$INSTALL_PANEL" == "yes" ]]; then
+		if [[ "$TELEMT_IMAGE_SOURCE" == "prebuilt" ]] && [[ ! -f "${REPO_ROOT}/install/docker-compose.panel.prebuilt.yml" ]]; then
+			err "Режим «прокси + панель (prebuilt)» требует файл install/docker-compose.panel.prebuilt.yml. Запускайте из корня репозитория telemt."
+		elif [[ "$TELEMT_IMAGE_SOURCE" == "build" ]] && [[ ! -f "${REPO_ROOT}/install/docker-compose.panel.yml" ]]; then
+			err "Режим «прокси + панель (build)» требует файл install/docker-compose.panel.yml. Запускайте из корня репозитория telemt."
+		fi
 	fi
 
 	if [[ "$TELEMT_IMAGE_SOURCE" == "build" ]]; then
@@ -542,8 +601,8 @@ cmd_install() {
 				info "Обновляю клон репозитория в ${CLONE_DIR} ..."
 				(cd "${CLONE_DIR}" && git pull --depth 1 2>/dev/null) || true
 			else
-				info "Клонирую GrandMax/telemt-pannel в ${CLONE_DIR} ..."
-				git clone --depth 1 https://github.com/GrandMax/telemt-pannel.git "${CLONE_DIR}"
+				info "Клонирую GrandMax/telemt-panel в ${CLONE_DIR} ..."
+				git clone --depth 1 https://github.com/GrandMax/telemt-panel.git "${CLONE_DIR}"
 			fi
 			REPO_ROOT="${CLONE_DIR}"
 		fi
@@ -562,7 +621,7 @@ cmd_install() {
 		read -r ans || true
 		ans_lower=$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')
 		if [[ -z "$ans" ]] || [[ "$ans_lower" == "y" ]] || [[ "$ans_lower" == "yes" ]] || [[ "$ans_lower" == "д" ]]; then
-			local save_url="https://raw.githubusercontent.com/GrandMax/telemt-pannel/main/install.sh"
+			local save_url="https://raw.githubusercontent.com/GrandMax/telemt-panel/main/install.sh"
 			local save_path="./install.sh"
 			if curl -sSL "$save_url" -o "$save_path" 2>/dev/null; then
 				chmod +x "$save_path"
@@ -588,7 +647,7 @@ update_scripts_if_newer() {
 		remote_ver=$(cd "${REPO_ROOT}" && git show origin/HEAD:install.sh 2>/dev/null | head -25 | grep -E '^SCRIPT_VERSION="' | head -1 | sed -n 's/^SCRIPT_VERSION="\(.*\)"$/\1/p')
 	fi
 	if [[ -z "$remote_ver" ]]; then
-		remote_ver=$(curl -sL "https://raw.githubusercontent.com/GrandMax/telemt-pannel/main/install.sh" 2>/dev/null | head -25 | grep -E '^SCRIPT_VERSION="' | head -1 | sed -n 's/^SCRIPT_VERSION="\(.*\)"$/\1/p')
+		remote_ver=$(curl -sL "https://raw.githubusercontent.com/GrandMax/telemt-panel/main/install.sh" 2>/dev/null | head -25 | grep -E '^SCRIPT_VERSION="' | head -1 | sed -n 's/^SCRIPT_VERSION="\(.*\)"$/\1/p')
 	fi
 	[[ -n "$remote_ver" ]] || return 0
 
@@ -602,7 +661,7 @@ update_scripts_if_newer() {
 	if [[ -d "${REPO_ROOT}/.git" ]] && (cd "${REPO_ROOT}" && git show origin/HEAD:install.sh &>/dev/null); then
 		(cd "${REPO_ROOT}" && git checkout origin/HEAD -- install.sh 2>/dev/null) && info "Скрипт обновлён до версии ${remote_ver}."
 	else
-		if curl -sL -o "${REPO_ROOT}/install.sh.new" "https://raw.githubusercontent.com/GrandMax/telemt-pannel/main/install.sh" 2>/dev/null; then
+		if curl -sL -o "${REPO_ROOT}/install.sh.new" "https://raw.githubusercontent.com/GrandMax/telemt-panel/main/install.sh" 2>/dev/null; then
 			mv "${REPO_ROOT}/install.sh.new" "${REPO_ROOT}/install.sh" && chmod +x "${REPO_ROOT}/install.sh" && info "Скрипт обновлён до версии ${remote_ver}."
 		else
 			warn "Не удалось загрузить новую версию скрипта."
@@ -629,8 +688,8 @@ cmd_update() {
 		fi
 		dir="$result"
 	fi
-	if [[ ! -d "$dir" ]] || [[ ! -f "${dir}/docker-compose.yml" ]] || [[ ! -f "${dir}/telemt.toml" ]]; then
-		err "Не похоже на установку telemt (нет docker-compose.yml или telemt.toml): ${dir}"
+	if [[ ! -d "$dir" ]] || ! is_valid_install_dir "$dir"; then
+		err "Не похоже на установку telemt: ${dir}"
 	fi
 	info "Каталог: ${dir}"
 	update_scripts_if_newer
@@ -640,9 +699,19 @@ cmd_update() {
 		val=$(grep -E '^TELEMT_IMAGE_SOURCE=' "${dir}/.env" 2>/dev/null | cut -d= -f2-)
 		if [[ -n "$val" ]]; then img_source="$val"; fi
 	fi
-	if [[ "$img_source" == "prebuilt" ]]; then
+	if is_panel_dir "$dir"; then
+		if [[ "$img_source" == "prebuilt" ]]; then
+			info "Режим «прокси + панель»: скачиваю образы (pull)..."
+			(cd "$dir" && docker compose --progress plain pull)
+		else
+			info "Режим «прокси + панель»: пересборка образов telemt и panel..."
+			(cd "$dir" && docker compose build)
+		fi
+		info "Перезапускаю контейнеры..."
+		(cd "$dir" && docker compose up -d)
+	elif [[ "$img_source" == "prebuilt" ]]; then
 		info "Скачиваю образ (pull)..."
-		(cd "$dir" && docker compose --progress plain pull telemt)
+		(cd "$dir" && docker compose --progress plain pull)
 		info "Перезапускаю контейнеры..."
 		(cd "$dir" && docker compose up -d)
 	else
@@ -660,6 +729,21 @@ get_install_dir() {
 	resolve_install_dir "${1:-$INSTALL_DIR}"
 }
 
+# True if dir uses panel mode (docker-compose has panel service).
+is_panel_dir() {
+	local dir="${1:-}"
+	[[ -f "${dir}/docker-compose.yml" ]] && grep -q "panel:" "${dir}/docker-compose.yml" 2>/dev/null
+}
+
+# True if dir looks like a valid telemt install (proxy-only or proxy+panel).
+is_valid_install_dir() {
+	local dir="${1:-}"
+	[[ -f "${dir}/docker-compose.yml" ]] || return 1
+	[[ -f "${dir}/traefik/dynamic/tcp.yml" ]] || return 1
+	[[ -f "${dir}/telemt.toml" ]] && return 0
+	is_panel_dir "$dir"
+}
+
 # Prompt for existing install directory (for update/config/uninstall). Returns absolute path.
 # Usage: dir=$(prompt_install_dir_existing)  # interactive
 # Or: dir=$(prompt_install_dir_existing "/path/default" "offer")  # on dir missing, offer new install (returns INSTALL:<path> if user agrees)
@@ -669,7 +753,7 @@ prompt_install_dir_existing() {
 	default="$(resolve_install_dir "$default")"
 	if [[ -t 0 ]]; then
 		# Auto-detect: if default path is a valid install, offer to use it
-		if [[ -d "$default" ]] && [[ -f "${default}/docker-compose.yml" ]] && [[ -f "${default}/telemt.toml" ]]; then
+		if [[ -d "$default" ]] && is_valid_install_dir "$default"; then
 			echo -n "Найден каталог установки: ${default}. Использовать? (Y/n): " >&2
 			read -r ans || true
 			ans_lower=$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')
@@ -702,8 +786,8 @@ prompt_install_dir_existing() {
 				fi
 				continue
 			fi
-			if [[ ! -f "${dir}/docker-compose.yml" ]] || [[ ! -f "${dir}/telemt.toml" ]]; then
-				warn "Не похоже на установку telemt (нет docker-compose.yml или telemt.toml). Укажите другой каталог или q для отмены."
+			if ! is_valid_install_dir "$dir"; then
+				warn "Не похоже на установку telemt (нет docker-compose.yml или каталога traefik/dynamic, или telemt.toml/панели). Укажите другой каталог или q для отмены."
 				continue
 			fi
 			echo "$dir"
@@ -713,7 +797,146 @@ prompt_install_dir_existing() {
 	echo "$default"
 }
 
-# Show main menu; set MENU_CHOICE=1..5 (5=exit) and return 0. Only call when [[ -t 0 ]].
+cmd_add_panel() {
+	info "Добавление панели к существующей установке (только прокси)..."
+	local dir result
+	if [[ $# -gt 0 ]]; then
+		dir="$(resolve_install_dir "${1}")"
+	else
+		result="$(prompt_install_dir_existing "${INSTALL_DIR}" "offer")"
+		if [[ "$result" == INSTALL:* ]]; then
+			INSTALL_DIR="${result#INSTALL:}"
+			cmd_install
+			return
+		fi
+		if [[ "$result" == "CANCEL" ]]; then
+			info "Отменено."
+			return
+		fi
+		dir="$result"
+	fi
+	if [[ ! -d "$dir" ]] || ! is_valid_install_dir "$dir"; then
+		err "Не похоже на установку telemt: ${dir}"
+	fi
+	if is_panel_dir "$dir"; then
+		err "В этом каталоге уже установлена панель (режим «прокси + панель»). Каталог: ${dir}"
+	fi
+	if [[ ! -f "${dir}/telemt.toml" ]]; then
+		err "Добавление панели возможно только к установке с telemt.toml (proxy-only). Каталог: ${dir}"
+	fi
+	info "Каталог: ${dir}"
+	INSTALL_DIR="$dir"
+	update_scripts_if_newer
+
+	# Backup and read current settings
+	local fake_domain list_port img_source
+	fake_domain=$(grep -E '^\s*tls_domain\s*=' "${dir}/telemt.toml" 2>/dev/null | sed -E 's/^[^=]*=\s*["]?([^"]+)["]?.*/\1/' | tr -d ' \r' || echo "example.com")
+	list_port=$(grep -E '^LISTEN_PORT=' "${dir}/.env" 2>/dev/null | cut -d= -f2- | tr -d '\r' || echo "443")
+	img_source=$(grep -E '^TELEMT_IMAGE_SOURCE=' "${dir}/.env" 2>/dev/null | cut -d= -f2- | tr -d '\r' || echo "build")
+	cp "${dir}/telemt.toml" "${dir}/telemt.toml.bak" 2>/dev/null || true
+	[[ -f "${dir}/.env" ]] && cp "${dir}/.env" "${dir}/.env.bak" 2>/dev/null || true
+
+	info "Останавливаю контейнеры..."
+	(cd "$dir" && docker compose down) || true
+
+	info "Подключаю панель и обновляю .env..."
+	if [[ "$img_source" == "prebuilt" ]]; then
+		sed -e "s|image: grandmax/telemt:latest|image: ${TELEMT_PREBUILT_IMAGE}|g" \
+		    -e "s|image: grandmax/telemt-panel:latest|image: ${PANEL_PREBUILT_IMAGE}|g" \
+		    "${REPO_ROOT}/install/docker-compose.panel.prebuilt.yml" > "${dir}/docker-compose.yml"
+	else
+		if [[ ! -f "${REPO_ROOT}/install/docker-compose.panel.yml" ]]; then
+			err "Файл install/docker-compose.panel.yml не найден. Запускайте из корня репозитория telemt."
+		fi
+		cp "${REPO_ROOT}/install/docker-compose.panel.yml" "${dir}/docker-compose.yml"
+	fi
+	PANEL_SECRET_KEY=$(openssl rand -hex 32)
+	{
+		echo "REPO_ROOT=${REPO_ROOT}"
+		echo "LISTEN_PORT=${list_port}"
+		echo "TELEMT_IMAGE_SOURCE=${img_source}"
+		echo "PANEL_SECRET_KEY=${PANEL_SECRET_KEY}"
+		echo "PANEL_PORT=${PANEL_PORT:-8080}"
+		echo "PROXY_HOST=${PROXY_HOST:-localhost}"
+		echo "FAKE_DOMAIN=${fake_domain}"
+	} > "${dir}/.env"
+
+	INSTALL_PANEL=yes
+	TELEMT_IMAGE_SOURCE="$img_source"
+	if [[ "$img_source" == "prebuilt" ]]; then
+		info "Загрузка образов telemt и panel из Docker Hub..."
+		(cd "$dir" && docker compose --progress plain pull)
+	else
+		info "Сборка образов telemt и panel..."
+		(cd "$dir" && docker compose build --no-cache 2>/dev/null || docker compose build)
+	fi
+	# Pre-populate shared volume with current telemt.toml so panel uses it as template
+	info "Копирую текущий конфиг прокси в volume для панели..."
+	(cd "$dir" && docker compose run --rm -v "${dir}/telemt.toml:/src/telemt.toml:ro" panel sh -c "cp /src/telemt.toml /app/telemt-config/config.toml" 2>/dev/null) || true
+	info "Запуск контейнеров..."
+	(cd "$dir" && docker compose up -d)
+	info "Ожидание готовности панели..."
+	local i
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		(cd "$dir" && docker compose exec -T panel curl -sf http://localhost:8080/health >/dev/null 2>&1) && break
+		sleep 2
+	done
+	create_panel_admin
+	print_link
+}
+
+cmd_reset_password() {
+	info "Сброс / установка пароля администратора панели..."
+	local dir result
+	if [[ $# -gt 0 ]]; then
+		dir="$(resolve_install_dir "${1}")"
+		shift
+	else
+		result="$(prompt_install_dir_existing "${INSTALL_DIR}")"
+		if [[ "$result" == "CANCEL" ]]; then
+			info "Отменено."
+			return
+		fi
+		dir="$result"
+	fi
+	if ! is_panel_dir "$dir"; then
+		err "Панель не установлена в ${dir}. Эта команда только для режима «прокси + панель»."
+	fi
+	INSTALL_DIR="$dir"
+	local admin_user="admin"
+	local admin_pass
+	if [[ -t 0 ]]; then
+		echo -n "Имя пользователя [${admin_user}]: " >&2
+		read -r input || true
+		if [[ -n "$input" ]]; then admin_user="$input"; fi
+		echo -n "Новый пароль (Enter — сгенерировать случайный): " >&2
+		read -rs admin_pass || true
+		echo "" >&2
+		if [[ -z "$admin_pass" ]]; then
+			admin_pass=$(openssl rand -base64 12 | tr -d '/+=' | head -c 16)
+			info "Сгенерирован случайный пароль."
+		fi
+	else
+		admin_user="${1:-admin}"
+		admin_pass="${2:-}"
+		if [[ -z "$admin_pass" ]]; then
+			admin_pass=$(openssl rand -base64 12 | tr -d '/+=' | head -c 16)
+		fi
+	fi
+	cd "$dir"
+	if docker compose run --rm panel python -m app.cli reset-password --username "$admin_user" --password "$admin_pass" 2>/dev/null; then
+		echo ""
+		echo -e "  Пароль обновлён:"
+		echo -e "  Логин:  ${GREEN}${admin_user}${NC}"
+		echo -e "  Пароль: ${GREEN}${admin_pass}${NC}"
+		echo ""
+	else
+		warn "Не удалось сбросить пароль. Возможно, пользователь '${admin_user}' не существует."
+		echo "  Попробуйте создать нового: cd ${dir} && docker compose run --rm panel python -m app.cli create-admin --username ${admin_user} --password YOUR_PASS --sudo"
+	fi
+}
+
+# Show main menu; set MENU_CHOICE=1..7 (7=exit) and return 0. Only call when [[ -t 0 ]].
 # Uses MENU_CHOICE instead of return code so that set -e does not exit when user selects 1.
 show_menu() {
 	while true; do
@@ -724,9 +947,11 @@ show_menu() {
 		echo "  2) Обновление (Docker: pull или пересборка и перезапуск)"
 		echo "  3) Смена домена (SNI)"
 		echo "  4) Удаление"
-		echo "  5) Выход"
+		echo "  5) Добавить панель (к установке «только прокси»)"
+		echo "  6) Сброс пароля администратора панели"
+		echo "  7) Выход"
 		echo ""
-		echo -n "Выберите действие [1-5]: "
+		echo -n "Выберите действие [1-7]: "
 		read -r choice || true
 		choice="${choice%% *}"
 		case "$choice" in
@@ -735,7 +960,9 @@ show_menu() {
 			3) MENU_CHOICE=3; return 0 ;;
 			4) MENU_CHOICE=4; return 0 ;;
 			5) MENU_CHOICE=5; return 0 ;;
-			*) warn "Введите число от 1 до 5." ;;
+			6) MENU_CHOICE=6; return 0 ;;
+			7) MENU_CHOICE=7; return 0 ;;
+			*) warn "Введите число от 1 до 7." ;;
 		esac
 	done
 }
@@ -847,8 +1074,8 @@ cmd_uninstall() {
 	if [[ ! -d "$dir" ]]; then
 		err "Каталог не найден: ${dir}"
 	fi
-	if [[ ! -f "${dir}/docker-compose.yml" ]] || [[ ! -f "${dir}/telemt.toml" ]]; then
-		err "Не похоже на установку telemt (нет docker-compose.yml или telemt.toml): ${dir}"
+	if ! is_valid_install_dir "$dir"; then
+		err "Не похоже на установку telemt: ${dir}"
 	fi
 	info "Каталог: ${dir}"
 
@@ -897,7 +1124,7 @@ cmd_uninstall() {
 }
 
 usage() {
-	echo "Использование: $0 [install | update | config | uninstall] [опции]"
+	echo "Использование: $0 [install | update | config | uninstall | add-panel | reset-password] [опции]"
 	echo ""
 	echo "  Без аргументов (при наличии TTY): интерактивное меню — выбор действия и ввод всех"
 	echo "  параметров диалогами внутри скрипта (каталог, порт, домен SNI, подтверждения)."
@@ -906,10 +1133,12 @@ usage() {
 	echo "  INSTALL_DIR, LISTEN_PORT, FAKE_DOMAIN, FAKE_DOMAIN_FROM_ENV. Для config без TTY:"
 	echo "  FAKE_DOMAIN или --sni DOMAIN. Для uninstall: INSTALL_DIR, при необходимости -y."
 	echo ""
-	echo "  install   — установка"
-	echo "  update    — обновление образа и перезапуск"
-	echo "  config    — смена домена Fake TLS (SNI)"
-	echo "  uninstall — удаление установки"
+	echo "  install    — установка"
+	echo "  update     — обновление образа и перезапуск"
+	echo "  config     — смена домена Fake TLS (SNI)"
+	echo "  uninstall  — удаление установки"
+	echo "  add-panel        — добавить панель к установке «только прокси»"
+	echo "  reset-password   — сброс пароля администратора панели"
 	exit 0
 }
 
@@ -933,7 +1162,9 @@ main() {
 				2) cmd_update ;;
 				3) cmd_config ;;
 				4) cmd_uninstall ;;
-				5) info "Выход."; exit 0 ;;
+				5) cmd_add_panel ;;
+				6) cmd_reset_password ;;
+				7) info "Выход."; exit 0 ;;
 				*) ;;
 			esac
 		done
@@ -944,11 +1175,13 @@ main() {
 	local cmd="${1:-install}"
 	if [[ $# -gt 0 ]]; then shift; fi
 	case "$cmd" in
-		install)  cmd_install "$@" ;;
-		update)   cmd_update "$@" ;;
-		config)   cmd_config "$@" ;;
-		uninstall) cmd_uninstall "$@" ;;
-		*) err "Неизвестная подкоманда: $cmd. Запустите без аргументов для меню или: install | update | config | uninstall" ;;
+		install)    cmd_install "$@" ;;
+		update)     cmd_update "$@" ;;
+		config)     cmd_config "$@" ;;
+		uninstall)  cmd_uninstall "$@" ;;
+		add-panel)       cmd_add_panel "$@" ;;
+		reset-password)  cmd_reset_password "$@" ;;
+		*) err "Неизвестная подкоманда: $cmd. Запустите без аргументов для меню или: install | update | config | uninstall | add-panel | reset-password" ;;
 	esac
 }
 

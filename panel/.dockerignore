@@ -1,0 +1,23 @@
+# Virtual env and node (rebuilt in container)
+backend/.venv
+frontend/node_modules
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+*.egg-info
+.eggs
+
+# IDE and git
+.git
+.gitignore
+.idea
+.cursor
+*.md
+.DS_Store
+
+# Tests and temp (not needed in image)
+backend/tests
+temp

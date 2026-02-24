@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -31,11 +32,29 @@ async def _metrics_loop(app: FastAPI):
             finally:
                 db.close()
         except Exception:
-            pass  # log and continue
+            logging.exception("Metrics scrape failed")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Run Alembic migrations so new columns (e.g. last_seen_at) exist
+    try:
+        from alembic import command
+        from alembic.config import Config
+        import sqlalchemy.exc
+        backend_dir = Path(__file__).resolve().parent.parent
+        alembic_cfg = Config(str(backend_dir / "alembic.ini"))
+        try:
+            command.upgrade(alembic_cfg, "head")
+        except sqlalchemy.exc.OperationalError as e:
+            # DB may have been created by create_all() earlier; tables exist but alembic_version is empty
+            if "already exists" in str(e.orig).lower():
+                command.stamp(alembic_cfg, "001")
+                command.upgrade(alembic_cfg, "head")
+            else:
+                raise
+    except Exception:
+        logging.exception("Alembic upgrade failed")
     Base.metadata.create_all(bind=engine)
     if settings.telemt_config_path:
         db = SessionLocal()

@@ -889,9 +889,10 @@ match crate::transport::middle_proxy::fetch_proxy_secret(proxy_secret_path).awai
 
     if let Some(port) = config.server.metrics_port {
         let stats = stats.clone();
+        let ip_tracker = ip_tracker.clone();
         let whitelist = config.server.metrics_whitelist.clone();
         tokio::spawn(async move {
-            metrics::serve(port, stats, whitelist).await;
+            metrics::serve(port, stats, ip_tracker, whitelist).await;
         });
     }
 

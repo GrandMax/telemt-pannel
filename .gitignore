@@ -10,6 +10,9 @@ target
 # Test output / temporary test dirs
 tests
 
+# Local install / docker-compose run dir (e.g. temp from install.sh)
+temp
+
 # Scripts (local/temporary)
 scripts
 

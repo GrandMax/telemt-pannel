@@ -13,6 +13,8 @@ export type User = {
   expire_at: string | null;
   note: string | null;
   created_at: string;
+  last_seen_at: string | null;
+  active_unique_ips: number | null;
   proxy_links?: { tg_link: string; https_link: string };
 };
 

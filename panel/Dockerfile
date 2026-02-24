@@ -20,9 +20,11 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 COPY backend/ ./backend
 COPY --from=frontend /app/frontend/dist ./static
 
+RUN mkdir -p /app/data /app/telemt-config \
+    && chown panel:panel /app/data /app/telemt-config
+
 WORKDIR /app/backend
 ENV PYTHONPATH=/app/backend
-# Uvicorn will serve the app; static files are mounted by the app when present
 EXPOSE 8080
 USER panel
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

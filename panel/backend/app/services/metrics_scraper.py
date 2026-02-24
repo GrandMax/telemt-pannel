@@ -22,6 +22,9 @@ METRIC_TO_PATTERN = re.compile(
 UPTIME_PATTERN = re.compile(r"telemt_uptime_seconds\s+([\d.]+)")
 CONNECTIONS_PATTERN = re.compile(r"telemt_connections_total\s+(\d+)")
 BAD_CONNECTIONS_PATTERN = re.compile(r"telemt_connections_bad_total\s+(\d+)")
+UNIQUE_IPS_ACTIVE_PATTERN = re.compile(
+    r'telemt_user_unique_ips_active\{user="([^"]+)"\}\s+(\d+)'
+)
 
 
 def parse_metrics(text: str) -> dict[str, Any]:
@@ -32,6 +35,7 @@ def parse_metrics(text: str) -> dict[str, Any]:
         "uptime": 0.0,
         "total_connections": 0,
         "bad_connections": 0,
+        "unique_ips_active": {},
     }
     for line in text.splitlines():
         line = line.strip()
@@ -56,6 +60,10 @@ def parse_metrics(text: str) -> dict[str, Any]:
         m = BAD_CONNECTIONS_PATTERN.match(line)
         if m:
             result["bad_connections"] = int(m.group(1))
+            continue
+        m = UNIQUE_IPS_ACTIVE_PATTERN.match(line)
+        if m:
+            result["unique_ips_active"][m.group(1)] = int(m.group(2))
     return result
 
 
@@ -77,6 +85,7 @@ def scrape_and_persist(db: Session, metrics_text: str, last_values: dict[str, tu
     new_last: dict[str, tuple[int, int]] = {}
 
     all_users = set(parsed["octets_from"]) | set(parsed["octets_to"])
+    users_for_ip_update = all_users | set(parsed.get("unique_ips_active", {}))
     for username in all_users:
         from_val = parsed["octets_from"].get(username, 0)
         to_val = parsed["octets_to"].get(username, 0)
@@ -100,9 +109,15 @@ def scrape_and_persist(db: Session, metrics_text: str, last_values: dict[str, tu
         )
         # Update user.data_used (cumulative)
         user.data_used = (user.data_used or 0) + delta_from + delta_to
+        user.last_seen_at = now
         # Enforce data_limit: set status to limited and exclude from config
         if user.data_limit is not None and user.data_used >= user.data_limit:
             user.status = "limited"
+
+    for username in users_for_ip_update:
+        user = db.query(User).filter(User.username == username).first()
+        if user:
+            user.active_unique_ips = parsed.get("unique_ips_active", {}).get(username)
 
     db.add(
         SystemStats(

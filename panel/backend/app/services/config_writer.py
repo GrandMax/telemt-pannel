@@ -29,10 +29,18 @@ def _load_template(path: str | None) -> dict[str, Any]:
 
 
 def _default_template() -> dict[str, Any]:
+    # server.port must match Traefik backend (telemt:1234) when running behind Traefik in Docker
+    # metrics_port so panel can scrape /metrics (e.g. telemt:9090); whitelist allows Docker network
     return {
         "general": {"fast_mode": True, "use_middle_proxy": False, "modes": {"classic": False, "secure": False, "tls": True}},
-        "server": {"port": 443, "listen_addr_ipv4": "0.0.0.0", "listen_addr_ipv6": "::"},
-        "censorship": {"tls_domain": "example.com", "mask": True, "mask_port": 443, "fake_cert_len": 2048},
+        "server": {
+            "port": 1234,
+            "listen_addr_ipv4": "0.0.0.0",
+            "listen_addr_ipv6": "::",
+            "metrics_port": 9090,
+            "metrics_whitelist": ["0.0.0.0/0"],
+        },
+        "censorship": {"tls_domain": settings.tls_domain, "mask": True, "mask_port": 443, "fake_cert_len": 2048},
         "access": {"replay_check_len": 65536, "replay_window_secs": 1800, "ignore_time_skew": False},
         "upstreams": [{"type": "direct", "enabled": True, "weight": 10}],
     }
@@ -70,6 +78,9 @@ def write_config(users: list[User], config_path: str | None = None) -> None:
     if not path:
         return
     template = _load_template(path)
+    template.setdefault("server", {})
+    template["server"].setdefault("metrics_port", 9090)
+    template["server"].setdefault("metrics_whitelist", ["0.0.0.0/0"])
     users_dict, max_tcp, data_quota, expirations, max_ips = _users_for_config(users)
 
     template.setdefault("access", {})

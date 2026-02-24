@@ -32,6 +32,8 @@ def _user_to_response(u: User, include_links: bool = False) -> UserResponse:
         expire_at=u.expire_at,
         note=u.note,
         created_at=u.created_at,
+        last_seen_at=u.last_seen_at,
+        active_unique_ips=u.active_unique_ips,
         proxy_links=links,
     )
 
