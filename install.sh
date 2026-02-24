@@ -285,8 +285,24 @@ TELEMT_INSTALL_BASE_URL="${TELEMT_INSTALL_BASE_URL:-https://raw.githubuserconten
 
 ensure_install_templates() {
 	local required="docker-compose.yml docker-compose.prebuilt.yml docker-compose.panel.yml docker-compose.panel.prebuilt.yml telemt.toml.example traefik-dynamic-tcp.yml"
+	local cache="${TEMPLATES_CACHE_DIR:-$DEFAULT_TEMPLATES_CACHE}"
 	local have_all=1
 	local f
+
+	# Сначала проверяем кэш в домашнем каталоге (куда и скачиваем)
+	for f in $required; do
+		if [[ ! -f "${cache}/install/${f}" ]]; then
+			have_all=0
+			break
+		fi
+	done
+	if [[ $have_all -eq 1 ]]; then
+		REPO_ROOT="$cache"
+		return 0
+	fi
+
+	# Затем — рядом со скриптом (запуск из репозитория)
+	have_all=1
 	for f in $required; do
 		if [[ ! -f "${REPO_ROOT}/install/${f}" ]]; then
 			have_all=0
@@ -295,20 +311,19 @@ ensure_install_templates() {
 	done
 	[[ $have_all -eq 1 ]] && return 0
 
+	# Шаблонов нет ни в кэше, ни рядом со скриптом — скачиваем в кэш
 	if [[ -t 0 ]]; then
-		warn "Шаблоны не найдены в ${REPO_ROOT}/install/. Скачать с GitHub в ${DEFAULT_TEMPLATES_CACHE}?"
+		warn "Шаблоны не найдены в ${cache}/install/. Скачать с GitHub в этот каталог?"
 		echo -n "Скачать шаблоны с GitHub (GrandMax/telemt-panel)? (Y/n): " >&2
 		read -r ans || true
 		ans_lower=$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')
 		if [[ "$ans_lower" == "n" ]] || [[ "$ans_lower" == "no" ]]; then
-			err "Шаблоны не найдены в ${REPO_ROOT}/install/. Запускайте скрипт из корня репозитория или разрешите загрузку с GitHub."
+			err "Шаблоны не найдены. Разрешите загрузку с GitHub или запустите скрипт из корня репозитория (с каталогом install/)."
 		fi
 	else
-		info "Шаблоны не найдены. Пытаюсь скачать с GitHub..."
+		info "Шаблоны не найдены. Пытаюсь скачать с GitHub в ${cache}..."
 	fi
 
-	local cache="${TEMPLATES_CACHE_DIR:-$DEFAULT_TEMPLATES_CACHE}"
-	info "Шаблоны будут загружены в ${cache}"
 	mkdir -p "${cache}/install"
 	for f in $required; do
 		if ! curl -sSL -o "${cache}/install/${f}" "${TELEMT_INSTALL_BASE_URL}/${f}"; then
