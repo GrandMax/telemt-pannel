@@ -3,7 +3,7 @@
 - ONLY signed and verified commits
 - ONLY from your name
 - DO NOT commit with `codex` or `claude` as author/commiter
-- PREFER `flow` branch for development, not `main`
+- Разработка ведётся в `main`; для крупных фич — отдельная ветка от `main`, затем merge в `main`
 
 ## AI
 We are not against modern tools, like AI, where you act as a principal or architect, but we consider it important:
