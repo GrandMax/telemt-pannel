@@ -277,20 +277,20 @@ prompt_image_source() {
 	fi
 }
 
-# Set INSTALL_PANEL=yes or no. Interactive: prompt; non-interactive: use env (default no).
+# Set INSTALL_PANEL=yes or no. Interactive: prompt; non-interactive: use env (default yes).
 prompt_install_panel() {
 	if [[ -t 0 ]]; then
 		echo ""
-		echo -n "Установить панель управления (веб-интерфейс для пользователей и ссылок)? (y/N): " >&2
+		echo -n "Установить панель управления (веб-интерфейс для пользователей и ссылок)? (Y/n): " >&2
 		read -r input || true
 		input=$(printf '%s' "${input}" | tr '[:upper:]' '[:lower:]')
-		if [[ "$input" == "y" ]] || [[ "$input" == "yes" ]] || [[ "$input" == "д" ]]; then
+		if [[ -z "$input" ]] || [[ "$input" == "y" ]] || [[ "$input" == "yes" ]] || [[ "$input" == "д" ]]; then
 			INSTALL_PANEL=yes
 		else
 			INSTALL_PANEL=no
 		fi
 	else
-		INSTALL_PANEL="${INSTALL_PANEL:-no}"
+		INSTALL_PANEL="${INSTALL_PANEL:-yes}"
 	fi
 }
 
@@ -324,7 +324,23 @@ ensure_install_templates() {
 		info "Шаблоны не найдены. Пытаюсь скачать с GitHub..."
 	fi
 
-	local cache="/opt/mtpanel-templates"
+	local cache
+	if [[ -n "${TEMPLATES_CACHE_DIR:-}" ]]; then
+		cache="${TEMPLATES_CACHE_DIR}"
+	elif [[ -t 0 ]]; then
+		echo ""
+		echo -n "Куда скачать шаблоны? [1] Временный каталог (удалится после установки) [2] Текущий каталог (./.mtpanel-templates) [1]: " >&2
+		read -r choice || true
+		choice="${choice:-1}"
+		if [[ "$choice" == "2" ]]; then
+			cache="$(pwd)/.mtpanel-templates"
+		else
+			cache="$(mktemp -d)"
+			info "Шаблоны будут загружены во временный каталог."
+		fi
+	else
+		cache="$(mktemp -d)"
+	fi
 	mkdir -p "${cache}/install"
 	for f in $required; do
 		if ! curl -sSL -o "${cache}/install/${f}" "${TELEMT_INSTALL_BASE_URL}/${f}"; then
@@ -582,6 +598,7 @@ cmd_install() {
 	confirm_install
 	prompt_image_source
 	prompt_install_panel
+	ensure_install_templates
 
 	if [[ "$INSTALL_PANEL" == "yes" ]]; then
 		if [[ "$TELEMT_IMAGE_SOURCE" == "prebuilt" ]] && [[ ! -f "${REPO_ROOT}/install/docker-compose.panel.prebuilt.yml" ]]; then
@@ -941,7 +958,7 @@ cmd_reset_password() {
 show_menu() {
 	while true; do
 		echo ""
-		echo -e "  ${GREEN}MTpannel${NC}"
+		echo -e "  ${GREEN}MTPanel${NC}"
 		echo ""
 		echo "  1) Установка (новая установка в каталог)"
 		echo "  2) Обновление (Docker: pull или пересборка и перезапуск)"
