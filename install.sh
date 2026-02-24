@@ -744,6 +744,10 @@ cmd_update() {
 	fi
 	if is_panel_dir "$dir"; then
 		if [[ "$img_source" == "prebuilt" ]]; then
+			ensure_install_templates
+			sed -e "s|image: grandmax/telemt:latest|image: ${TELEMT_PREBUILT_IMAGE:-grandmax/telemt:latest}|g" \
+			    -e "s|image: grandmax/telemt-panel:latest|image: ${PANEL_PREBUILT_IMAGE:-grandmax/telemt-panel:latest}|g" \
+			    "${REPO_ROOT}/install/docker-compose.panel.prebuilt.yml" > "${dir}/docker-compose.yml"
 			info "Режим «прокси + панель»: скачиваю образы (pull)..."
 			docker pull "${TELEMT_PREBUILT_IMAGE:-grandmax/telemt:latest}" && docker pull "${PANEL_PREBUILT_IMAGE:-grandmax/telemt-panel:latest}" || err "Не удалось загрузить образы."
 			docker pull traefik:v3.6 || true
@@ -760,6 +764,9 @@ cmd_update() {
 			err "Не удалось перезапустить контейнеры. Проверьте: cd ${dir} && docker compose logs."
 		fi
 	elif [[ "$img_source" == "prebuilt" ]]; then
+		ensure_install_templates
+		sed -e "s|image: grandmax/telemt:latest|image: ${TELEMT_PREBUILT_IMAGE:-grandmax/telemt:latest}|g" \
+		    "${REPO_ROOT}/install/docker-compose.prebuilt.yml" > "${dir}/docker-compose.yml"
 		info "Скачиваю образ (pull)..."
 		docker pull "${TELEMT_PREBUILT_IMAGE:-grandmax/telemt:latest}" || err "Не удалось загрузить образ."
 		docker pull traefik:v3.6 || true
