@@ -448,17 +448,30 @@ run_compose() {
 			if ! docker pull "${PANEL_PREBUILT_IMAGE}"; then
 				err "Не удалось загрузить образ ${PANEL_PREBUILT_IMAGE}. Образ собирается только для linux/amd64."
 			fi
+			docker pull traefik:v3.6 || true
 		else
 			info "Сборка образов telemt и panel..."
 			docker compose build --no-cache 2>/dev/null || docker compose build
 		fi
 		# Start traefik and panel first so shared volume exists, then copy initial config for telemt
-		docker compose up -d traefik panel
+		set +e
+		up_out=$(docker compose up -d traefik panel 2>&1); up_rc=$?
+		set -e
+		if [[ $up_rc -ne 0 ]]; then
+			warn "Вывод: $up_out"
+			err "Не удалось запустить traefik и panel. Проверьте docker compose в каталоге ${INSTALL_DIR}."
+		fi
 		info "Копирую начальный конфиг прокси в volume для telemt..."
 		if ! docker compose run --rm -v "${INSTALL_DIR}/telemt.toml:/src/telemt.toml:ro" panel sh -c "cp /src/telemt.toml /app/telemt-config/config.toml"; then
 			err "Не удалось скопировать telemt.toml в volume. Проверьте: ${INSTALL_DIR}/telemt.toml и логи панели."
 		fi
-		docker compose up -d
+		set +e
+		up_out=$(docker compose up -d 2>&1); up_rc=$?
+		set -e
+		if [[ $up_rc -ne 0 ]]; then
+			warn "Вывод: $up_out"
+			err "Не удалось запустить контейнеры. Проверьте: cd ${INSTALL_DIR} && docker compose logs."
+		fi
 		info "Ожидание готовности панели..."
 		for _ in 1 2 3 4 5 6 7 8 9 10; do
 			if docker compose exec -T panel curl -sf http://localhost:8080/health >/dev/null 2>&1; then
@@ -473,7 +486,14 @@ run_compose() {
 			if ! docker pull "${TELEMT_PREBUILT_IMAGE}"; then
 				err "Не удалось загрузить образ ${TELEMT_PREBUILT_IMAGE}. Образ собирается только для linux/amd64."
 			fi
-			docker compose up -d
+			docker pull traefik:v3.6 || true
+			set +e
+			up_out=$(docker compose up -d 2>&1); up_rc=$?
+			set -e
+			if [[ $up_rc -ne 0 ]]; then
+				warn "Вывод: $up_out"
+				err "Не удалось запустить контейнеры. Проверьте: cd ${INSTALL_DIR} && docker compose logs."
+			fi
 		else
 			info "Сборка образа telemt и запуск контейнеров..."
 			docker compose build --no-cache telemt || docker compose build telemt
@@ -726,22 +746,42 @@ cmd_update() {
 		if [[ "$img_source" == "prebuilt" ]]; then
 			info "Режим «прокси + панель»: скачиваю образы (pull)..."
 			docker pull "${TELEMT_PREBUILT_IMAGE:-grandmax/telemt:latest}" && docker pull "${PANEL_PREBUILT_IMAGE:-grandmax/telemt-panel:latest}" || err "Не удалось загрузить образы."
+			docker pull traefik:v3.6 || true
 		else
 			info "Режим «прокси + панель»: пересборка образов telemt и panel..."
 			(cd "$dir" && docker compose build)
 		fi
 		info "Перезапускаю контейнеры..."
-		(cd "$dir" && docker compose up -d)
+		set +e
+		up_out=$(cd "$dir" && docker compose up -d 2>&1); up_rc=$?
+		set -e
+		if [[ $up_rc -ne 0 ]]; then
+			warn "Вывод: $up_out"
+			err "Не удалось перезапустить контейнеры. Проверьте: cd ${dir} && docker compose logs."
+		fi
 	elif [[ "$img_source" == "prebuilt" ]]; then
 		info "Скачиваю образ (pull)..."
 		docker pull "${TELEMT_PREBUILT_IMAGE:-grandmax/telemt:latest}" || err "Не удалось загрузить образ."
+		docker pull traefik:v3.6 || true
 		info "Перезапускаю контейнеры..."
-		(cd "$dir" && docker compose up -d)
+		set +e
+		up_out=$(cd "$dir" && docker compose up -d 2>&1); up_rc=$?
+		set -e
+		if [[ $up_rc -ne 0 ]]; then
+			warn "Вывод: $up_out"
+			err "Не удалось перезапустить контейнеры. Проверьте: cd ${dir} && docker compose logs."
+		fi
 	else
 		info "Пересборка образа (build)..."
 		(cd "$dir" && docker compose build telemt)
 		info "Перезапускаю контейнеры..."
-		(cd "$dir" && docker compose up -d)
+		set +e
+		up_out=$(cd "$dir" && docker compose up -d 2>&1); up_rc=$?
+		set -e
+		if [[ $up_rc -ne 0 ]]; then
+			warn "Вывод: $up_out"
+			err "Не удалось перезапустить контейнеры. Проверьте: cd ${dir} && docker compose logs."
+		fi
 	fi
 	info "Готово."
 	INSTALL_DIR="$dir"
