@@ -7,7 +7,9 @@ FROM rust:1.93.1-bookworm AS builder
 WORKDIR /build
 
 # Один полный сбор без dummy-build: для arm64 (QEMU) два прохода cargo занимают часы
-COPY . .
+# Сначала копируем манифест и исходники, без лишних файлов из репозитория.
+COPY Cargo.toml .
+COPY src ./src
 RUN rustc --version && cargo build --release && strip target/release/telemt
 
 # ==========================
