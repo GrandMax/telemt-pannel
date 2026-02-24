@@ -738,7 +738,7 @@ cmd_update() {
 	if is_panel_dir "$dir"; then
 		if [[ "$img_source" == "prebuilt" ]]; then
 			info "Режим «прокси + панель»: скачиваю образы (pull)..."
-			(cd "$dir" && docker compose --progress plain pull)
+			docker pull "${TELEMT_PREBUILT_IMAGE:-grandmax/telemt:latest}" && docker pull "${PANEL_PREBUILT_IMAGE:-grandmax/telemt-panel:latest}" || err "Не удалось загрузить образы."
 		else
 			info "Режим «прокси + панель»: пересборка образов telemt и panel..."
 			(cd "$dir" && docker compose build)
@@ -747,7 +747,7 @@ cmd_update() {
 		(cd "$dir" && docker compose up -d)
 	elif [[ "$img_source" == "prebuilt" ]]; then
 		info "Скачиваю образ (pull)..."
-		(cd "$dir" && docker compose --progress plain pull)
+		docker pull "${TELEMT_PREBUILT_IMAGE:-grandmax/telemt:latest}" || err "Не удалось загрузить образ."
 		info "Перезапускаю контейнеры..."
 		(cd "$dir" && docker compose up -d)
 	else
@@ -901,7 +901,8 @@ cmd_add_panel() {
 	TELEMT_IMAGE_SOURCE="$img_source"
 	if [[ "$img_source" == "prebuilt" ]]; then
 		info "Загрузка образов telemt и panel из Docker Hub..."
-		(cd "$dir" && docker compose --progress plain pull)
+		docker pull "${TELEMT_PREBUILT_IMAGE:-grandmax/telemt:latest}" || err "Не удалось загрузить образ telemt."
+		docker pull "${PANEL_PREBUILT_IMAGE:-grandmax/telemt-panel:latest}" || err "Не удалось загрузить образ panel."
 	else
 		info "Сборка образов telemt и panel..."
 		(cd "$dir" && docker compose build --no-cache 2>/dev/null || docker compose build)
