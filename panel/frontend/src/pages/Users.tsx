@@ -43,6 +43,30 @@ import {
 
 const PAGE_SIZE = 10;
 
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // fallback below
+  }
+  try {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 function formatBytes(n: number): string {
   if (n === 0) return "0 B";
   const k = 1024;
@@ -98,7 +122,11 @@ export default function Users() {
               <Th>Data limit</Th>
               <Th>Expires</Th>
               <Th>Last seen</Th>
-              <Th title="Currently connected unique IPs">Unique IPs</Th>
+              <Th>
+                <Tooltip label="Сейчас подключено уникальных IP (обновление раз в 30 с). Обнуляется при отключении всех клиентов." hasArrow>
+                  <span style={{ borderBottom: "1px dotted", cursor: "help" }}>Unique IPs</span>
+                </Tooltip>
+              </Th>
               <Th>Actions</Th>
             </Tr>
           </Thead>
@@ -293,10 +321,10 @@ function UserRow({
   const regenerateSecret = useRegenerateSecret();
 
   const handleCopy = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
+    const ok = await copyToClipboard(text);
+    if (ok) {
       toast({ title: "Copied to clipboard", status: "success", duration: 1500 });
-    } catch {
+    } else {
       toast({ title: "Copy failed", status: "error", duration: 2000 });
     }
   };

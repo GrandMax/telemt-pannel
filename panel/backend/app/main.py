@@ -5,7 +5,18 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from starlette.staticfiles import StaticFiles
+
+
+class SpaStaticFiles(StaticFiles):
+    """Serve static files with SPA fallback: unknown paths return index.html."""
+
+    def lookup_path(self, path: str):
+        full_path, stat_result = super().lookup_path(path)
+        if stat_result is None:
+            return super().lookup_path("index.html")
+        return full_path, stat_result
+
 
 from app.database import engine, Base, SessionLocal
 from app.routers import admin, user, system
@@ -85,7 +96,7 @@ app.include_router(admin.router)
 app.include_router(user.router)
 
 if STATIC_DIR.is_dir():
-    app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
+    app.mount("/", SpaStaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 else:
 
     @app.get("/")
