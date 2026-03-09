@@ -347,4 +347,30 @@ mod tests {
             .unwrap_or(false));
         let _ = std::fs::remove_file(path);
     }
+
+    #[test]
+    fn trace_enabled_defaults_to_false() {
+        let cfg = ProxyConfig::default();
+        assert!(!cfg.general.trace_enabled);
+    }
+
+    #[test]
+    fn trace_enabled_can_be_enabled_from_toml() {
+        let toml = r#"
+            [general]
+            trace_enabled = true
+
+            [censorship]
+            tls_domain = "example.com"
+
+            [access.users]
+            user = "00000000000000000000000000000000"
+        "#;
+        let dir = std::env::temp_dir();
+        let path = dir.join("telemt_trace_enabled_test.toml");
+        std::fs::write(&path, toml).unwrap();
+        let cfg = ProxyConfig::load(&path).unwrap();
+        assert!(cfg.general.trace_enabled);
+        let _ = std::fs::remove_file(path);
+    }
 }

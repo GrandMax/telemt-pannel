@@ -12,7 +12,6 @@ import {
   Th,
   Td,
   Badge,
-  IconButton,
   useDisclosure,
   Modal,
   ModalOverlay,
@@ -134,7 +133,7 @@ export default function Users() {
             {isLoading
               ? null
               : users.map((u) => (
-                  <UserRow key={u.id} user={u} onSearchChange={setSearch} />
+                  <UserRow key={u.id} user={u} />
                 ))}
           </Tbody>
         </Table>
@@ -217,18 +216,18 @@ function CreateUserButton() {
   );
 }
 
-function UserFormFields({
+function UserFormFields<T extends UserCreateInput | (UserUpdateInput & { username?: string })>({
   create,
   value,
   onChange,
 }: {
   create: boolean;
-  value: UserCreateInput | (UserUpdateInput & { username?: string });
-  onChange: (v: UserCreateInput | UserUpdateInput) => void;
+  value: T;
+  onChange: (v: T) => void;
 }) {
   const v = value as Record<string, unknown>;
   const update = (key: string, val: unknown) =>
-    onChange({ ...value, [key]: val === "" ? null : val });
+    onChange({ ...value, [key]: val === "" ? null : val } as T);
   return (
     <>
       {create && (
@@ -248,7 +247,7 @@ function UserFormFields({
         <Input
           type="number"
           min={0}
-          value={v.data_limit ?? ""}
+          value={(v.data_limit as number | null | undefined) ?? ""}
           onChange={(e) => update("data_limit", e.target.value ? Number(e.target.value) : null)}
         />
       </FormControl>
@@ -257,7 +256,7 @@ function UserFormFields({
         <Input
           type="number"
           min={0}
-          value={v.max_connections ?? ""}
+          value={(v.max_connections as number | null | undefined) ?? ""}
           onChange={(e) => update("max_connections", e.target.value ? Number(e.target.value) : null)}
         />
       </FormControl>
@@ -268,7 +267,7 @@ function UserFormFields({
         <Input
           type="number"
           min={0}
-          value={v.max_unique_ips ?? ""}
+          value={(v.max_unique_ips as number | null | undefined) ?? ""}
           onChange={(e) => update("max_unique_ips", e.target.value ? Number(e.target.value) : null)}
         />
       </FormControl>
@@ -307,10 +306,8 @@ function UserFormFields({
 
 function UserRow({
   user,
-  onSearchChange,
 }: {
   user: User;
-  onSearchChange: (s: string) => void;
 }) {
   const [linksModalUser, setLinksModalUser] = useState<string | null>(null);
   const [editUser, setEditUser] = useState<User | null>(null);

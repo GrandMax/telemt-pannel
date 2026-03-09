@@ -25,6 +25,7 @@ mod protocol;
 mod proxy;
 mod stats;
 mod stream;
+mod trace;
 mod transport;
 mod tls_front;
 mod util;
@@ -891,8 +892,9 @@ match crate::transport::middle_proxy::fetch_proxy_secret(proxy_secret_path).awai
         let stats = stats.clone();
         let ip_tracker = ip_tracker.clone();
         let whitelist = config.server.metrics_whitelist.clone();
+        let trace_registry = me_pool.as_ref().map(|pool| pool.registry().clone());
         tokio::spawn(async move {
-            metrics::serve(port, stats, ip_tracker, whitelist).await;
+            metrics::serve(port, stats, ip_tracker, whitelist, trace_registry).await;
         });
     }
 

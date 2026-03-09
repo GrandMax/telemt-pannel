@@ -1,10 +1,26 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordRequestForm
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.models.admin import Admin
-from app.schemas.admin import AdminCreate, AdminResponse, Token
+from app.models.user import User
+from app.schemas.admin import (
+    AdminCreate,
+    AdminResponse,
+    ExportSettings,
+    ExportSnapshot,
+    ExportUser,
+    ImportReport,
+    ImportSkippedItem,
+    ImportSnapshotRequest,
+    Token,
+)
+from app.services.user_service import sync_config
 from app.utils.auth import verify_password, hash_password, create_access_token, decode_access_token
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -31,6 +47,48 @@ def require_sudo(admin: Admin = Depends(get_current_admin)) -> Admin:
     if not admin.is_sudo:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sudo required")
     return admin
+
+
+def _export_settings() -> ExportSettings:
+    return ExportSettings(
+        proxy_host=settings.proxy_host,
+        proxy_port=settings.proxy_port,
+        tls_domain=settings.tls_domain,
+        telemt_metrics_url=settings.telemt_metrics_url,
+        telemt_ignore_time_skew=settings.telemt_ignore_time_skew,
+    )
+
+
+def _apply_settings(payload: ExportSettings) -> None:
+    settings.proxy_host = payload.proxy_host
+    settings.proxy_port = payload.proxy_port
+    settings.tls_domain = payload.tls_domain
+    settings.telemt_metrics_url = payload.telemt_metrics_url or ""
+    settings.telemt_ignore_time_skew = payload.telemt_ignore_time_skew
+
+
+def _user_enabled(user: User) -> bool:
+    return user.status == "active"
+
+
+def _user_status(payload: ExportUser) -> str:
+    if payload.status:
+        return payload.status
+    return "active" if payload.enabled else "disabled"
+
+
+def _user_to_export(user: User) -> ExportUser:
+    return ExportUser(
+        username=user.username,
+        secret=user.secret,
+        enabled=_user_enabled(user),
+        ip_limit=user.max_unique_ips,
+        comment=user.note,
+        status=user.status,
+        data_limit=user.data_limit,
+        max_connections=user.max_connections,
+        expire_at=user.expire_at,
+    )
 
 
 @router.post("/token", response_model=Token)
@@ -74,3 +132,83 @@ def create_admin(
         is_sudo=admin.is_sudo,
         created_at=admin.created_at.isoformat() if admin.created_at else "",
     )
+
+
+@router.get("/export", response_model=ExportSnapshot)
+def export_snapshot(
+    db: Session = Depends(get_db),
+    _: Admin = Depends(require_sudo),
+):
+    users = db.query(User).order_by(User.username).all()
+    return ExportSnapshot(
+        version=1,
+        exported_at=datetime.now(timezone.utc),
+        users=[_user_to_export(user) for user in users],
+        settings=_export_settings(),
+    )
+
+
+@router.post("/import", response_model=ImportReport)
+def import_snapshot(
+    body: ImportSnapshotRequest,
+    mode: str = Query("merge"),
+    db: Session = Depends(get_db),
+    _: Admin = Depends(require_sudo),
+):
+    if mode not in {"merge", "replace"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported import mode")
+    if body.version != 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported export version")
+
+    _apply_settings(body.settings)
+
+    parsed_users: list[ExportUser] = []
+    skipped: list[ImportSkippedItem] = []
+    for raw_user in body.users:
+        username = raw_user.get("username") if isinstance(raw_user, dict) else None
+        try:
+            parsed_users.append(ExportUser.model_validate(raw_user))
+        except ValidationError as exc:
+            skipped.append(
+                ImportSkippedItem(
+                    username=str(username) if username else None,
+                    reason=exc.errors()[0]["msg"],
+                )
+            )
+
+    added = 0
+    updated = 0
+
+    if mode == "replace":
+        db.query(User).delete()
+
+    for payload in parsed_users:
+        user = db.query(User).filter(User.username == payload.username).first()
+        if user is None:
+            user = User(
+                username=payload.username,
+                secret=payload.secret.lower(),
+                status=_user_status(payload),
+                data_limit=payload.data_limit,
+                data_used=0,
+                max_connections=payload.max_connections,
+                max_unique_ips=payload.ip_limit,
+                expire_at=payload.expire_at,
+                note=payload.comment,
+            )
+            db.add(user)
+            added += 1
+            continue
+
+        user.secret = payload.secret.lower()
+        user.status = _user_status(payload)
+        user.data_limit = payload.data_limit
+        user.max_connections = payload.max_connections
+        user.max_unique_ips = payload.ip_limit
+        user.expire_at = payload.expire_at
+        user.note = payload.comment
+        updated += 1
+
+    db.commit()
+    sync_config(db)
+    return ImportReport(added=added, updated=updated, skipped=skipped)

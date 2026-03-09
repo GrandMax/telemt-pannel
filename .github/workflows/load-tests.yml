@@ -1,0 +1,93 @@
+# Manual load testing workflow for transport-level stress scenarios.
+name: Load Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: "Load scenario to run"
+        required: true
+        default: "both"
+        type: choice
+        options:
+          - me
+          - direct
+          - both
+      clients:
+        description: "Concurrent clients"
+        required: true
+        default: "10"
+      duration_seconds:
+        description: "Scenario duration in seconds"
+        required: true
+        default: "15"
+      me_hold_ms:
+        description: "ME scenario hold time per connection (ms)"
+        required: true
+        default: "250"
+      direct_stall_ms:
+        description: "Direct scenario idle hold time (ms)"
+        required: true
+        default: "5000"
+
+jobs:
+  load-tests:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Prepare temp directory
+        run: mkdir -p temp
+
+      - name: Show Docker versions
+        run: docker --version && docker-compose --version
+
+      - name: Validate load test scripts
+        run: |
+          chmod +x tools/load-tests/run-me-load.sh tools/load-tests/run-direct-load.sh
+          node --check tools/load-tests/me_load.js
+          node --check tools/load-tests/direct_load.js
+          bash -n tools/load-tests/run-me-load.sh
+          bash -n tools/load-tests/run-direct-load.sh
+
+      - name: Build and start stack
+        run: docker-compose up --build -d
+
+      - name: Show stack status
+        run: docker-compose ps
+
+      - name: Run selected load scenarios
+        env:
+          CLIENTS: ${{ inputs.clients }}
+          DURATION_SECONDS: ${{ inputs.duration_seconds }}
+          ME_HOLD_MS: ${{ inputs.me_hold_ms }}
+          DIRECT_STALL_MS: ${{ inputs.direct_stall_ms }}
+          SCENARIO: ${{ inputs.scenario }}
+          MAX_FAILURES: "0"
+          MAX_TIMEOUTS: "0"
+          MIN_SUCCESS: "1"
+        run: |
+          set -euo pipefail
+          if [[ "$SCENARIO" == "me" || "$SCENARIO" == "both" ]]; then
+            ./tools/load-tests/run-me-load.sh "$CLIENTS" "$DURATION_SECONDS" "$ME_HOLD_MS" | tee temp/me-load.log
+          fi
+          if [[ "$SCENARIO" == "direct" || "$SCENARIO" == "both" ]]; then
+            ./tools/load-tests/run-direct-load.sh "$CLIENTS" "$DURATION_SECONDS" "$DIRECT_STALL_MS" | tee temp/direct-load.log
+          fi
+
+      - name: Collect docker logs
+        if: always()
+        run: docker-compose logs --no-color > temp/docker-compose-load-tests.log
+
+      - name: Show docker log tail
+        if: always()
+        run: tail -n 200 temp/docker-compose-load-tests.log
+
+      - name: Stop stack
+        if: always()
+        run: docker-compose down -v

@@ -97,14 +97,6 @@ export default function DashboardCharts() {
     yaxis: {
       labels: { formatter: (v) => formatBytes(v) },
     },
-    plotOptions: {
-      area: {
-        dataLabels: {
-          enabled: true,
-          formatter: dataLabelsFormatter,
-        },
-      },
-    },
     stroke: { curve: "smooth" },
     fill: { type: "gradient", opacity: 0.4 },
     legend: {

@@ -12,6 +12,7 @@ use crate::protocol::constants::{*, secure_padding_len};
 use crate::proxy::handshake::HandshakeSuccess;
 use crate::stats::Stats;
 use crate::stream::{BufferPool, CryptoReader, CryptoWriter};
+use crate::trace::{TraceBuffer, TraceEvent, push_if_enabled};
 use crate::transport::middle_proxy::{MePool, MeResponse, proto_flags_for_tag};
 
 #[allow(clippy::too_many_arguments)]
@@ -33,6 +34,10 @@ where
     let user = success.user.clone();
     let peer = success.peer;
     let proto_tag = success.proto_tag;
+    let session_trace = config
+        .general
+        .trace_enabled
+        .then(|| Arc::new(TraceBuffer::new(256)));
 
     info!(
         user = %user,
@@ -41,6 +46,13 @@ where
         proto = ?proto_tag,
         mode = "middle_proxy",
         "Routing via Middle-End"
+    );
+    push_if_enabled(
+        session_trace.as_deref(),
+        TraceEvent::new(
+            "relay_start",
+            format!("user={user} peer={peer} dc={} proto={proto_tag:?}", success.dc_idx),
+        ),
     );
 
     let (conn_id, me_rx) = me_pool.registry().register().await;
@@ -65,6 +77,7 @@ where
     let stats_clone = stats.clone();
     let rng_clone = rng.clone();
     let user_clone = user.clone();
+    let session_trace_writer = session_trace.clone();
     let me_writer = tokio::spawn(async move {
         let mut writer = crypto_writer;
         loop {
@@ -73,25 +86,51 @@ where
                     match msg {
                         Some(MeResponse::Data { flags, data }) => {
                             trace!(conn_id, bytes = data.len(), flags, "ME->C data");
+                            push_if_enabled(
+                                session_trace_writer.as_deref(),
+                                TraceEvent::new(
+                                    "me_to_client_data",
+                                    format!("conn_id={conn_id} flags={flags} len={}", data.len()),
+                                ),
+                            );
                             stats_clone.add_user_octets_to(&user_clone, data.len() as u64);
                             write_client_payload(&mut writer, proto_tag, flags, &data, rng_clone.as_ref()).await?;
                         }
                         Some(MeResponse::Ack(confirm)) => {
                             trace!(conn_id, confirm, "ME->C quickack");
+                            push_if_enabled(
+                                session_trace_writer.as_deref(),
+                                TraceEvent::new(
+                                    "me_to_client_ack",
+                                    format!("conn_id={conn_id} confirm={confirm}"),
+                                ),
+                            );
                             write_client_ack(&mut writer, proto_tag, confirm).await?;
                         }
                         Some(MeResponse::Close) => {
                             debug!(conn_id, "ME sent close");
+                            push_if_enabled(
+                                session_trace_writer.as_deref(),
+                                TraceEvent::new("me_close", format!("conn_id={conn_id}")),
+                            );
                             return Ok(());
                         }
                         None => {
                             debug!(conn_id, "ME channel closed");
+                            push_if_enabled(
+                                session_trace_writer.as_deref(),
+                                TraceEvent::new("me_channel_closed", format!("conn_id={conn_id}")),
+                            );
                             return Err(ProxyError::Proxy("ME connection lost".into()));
                         }
                     }
                 }
                 _ = &mut stop_rx => {
                     debug!(conn_id, "ME writer stop signal");
+                    push_if_enabled(
+                        session_trace_writer.as_deref(),
+                        TraceEvent::new("writer_stop", format!("conn_id={conn_id}")),
+                    );
                     return Ok(());
                 }
             }
@@ -104,6 +143,13 @@ where
         match read_client_payload(&mut crypto_reader, proto_tag, frame_limit, &user).await {
             Ok(Some((payload, quickack))) => {
                 trace!(conn_id, bytes = payload.len(), "C->ME frame");
+                push_if_enabled(
+                    session_trace.as_deref(),
+                    TraceEvent::new(
+                        "client_to_me_frame",
+                        format!("conn_id={conn_id} len={} quickack={quickack}", payload.len()),
+                    ),
+                );
                 stats.add_user_octets_from(&user, payload.len() as u64);
                 let mut flags = proto_flags;
                 if quickack {
@@ -114,23 +160,37 @@ where
                 }
                 if let Err(e) = me_pool.send_proxy_req(
                     conn_id,
+                    &user,
                     success.dc_idx,
                     peer,
                     translated_local_addr,
                     &payload,
                     flags,
+                    session_trace.clone(),
                 ).await {
+                    push_if_enabled(
+                        session_trace.as_deref(),
+                        TraceEvent::new("send_proxy_req_error", format!("conn_id={conn_id} error={e}")),
+                    );
                     main_result = Err(e);
                     break;
                 }
             }
             Ok(None) => {
                 debug!(conn_id, "Client EOF");
+                push_if_enabled(
+                    session_trace.as_deref(),
+                    TraceEvent::new("client_eof", format!("conn_id={conn_id}")),
+                );
                 client_closed = true;
                 let _ = me_pool.send_close(conn_id).await;
                 break;
             }
             Err(e) => {
+                push_if_enabled(
+                    session_trace.as_deref(),
+                    TraceEvent::new("client_read_error", format!("conn_id={conn_id} error={e}")),
+                );
                 main_result = Err(e);
                 break;
             }
@@ -159,6 +219,10 @@ where
     };
 
     debug!(user = %user, conn_id, "ME relay cleanup");
+    push_if_enabled(
+        session_trace.as_deref(),
+        TraceEvent::new("relay_cleanup", format!("user={user} conn_id={conn_id}")),
+    );
     me_pool.registry().unregister(conn_id).await;
     stats.decrement_user_curr_connects(&user);
     result

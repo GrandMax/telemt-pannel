@@ -8,6 +8,7 @@ use tracing::{debug, warn};
 use crate::error::{ProxyError, Result};
 use crate::network::IpFamily;
 use crate::protocol::constants::RPC_CLOSE_EXT_U32;
+use crate::trace::TraceBuffer;
 
 use super::MePool;
 use super::codec::WriterCommand;
@@ -16,14 +17,17 @@ use rand::seq::SliceRandom;
 use super::registry::ConnMeta;
 
 impl MePool {
+    #[allow(clippy::too_many_arguments)]
     pub async fn send_proxy_req(
         self: &Arc<Self>,
         conn_id: u64,
+        user: &str,
         target_dc: i16,
         client_addr: SocketAddr,
         our_addr: SocketAddr,
         data: &[u8],
         proto_flags: u32,
+        trace: Option<Arc<TraceBuffer>>,
     ) -> Result<()> {
         let payload = build_proxy_req_payload(
             conn_id,
@@ -34,10 +38,12 @@ impl MePool {
             proto_flags,
         );
         let meta = ConnMeta {
+            user: user.to_string(),
             target_dc,
             client_addr,
             our_addr,
             proto_flags,
+            trace,
         };
         let mut emergency_attempts = 0;
 

@@ -143,6 +143,10 @@ pub struct GeneralConfig {
     #[serde(default)]
     pub use_middle_proxy: bool,
 
+    /// Enable per-session in-memory trace buffers for diagnostics.
+    #[serde(default)]
+    pub trace_enabled: bool,
+
     #[serde(default)]
     pub ad_tag: Option<String>,
 
@@ -284,6 +288,7 @@ impl Default for GeneralConfig {
             prefer_ipv6: false,
             fast_mode: true,
             use_middle_proxy: false,
+            trace_enabled: false,
             ad_tag: None,
             proxy_secret_path: None,
             middle_proxy_nat_ip: None,

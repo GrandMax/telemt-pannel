@@ -2,6 +2,7 @@
 [general]
 fast_mode = true
 use_middle_proxy = true
+trace_enabled = false
 # ad_tag = "00000000000000000000000000000000"
 # Path to proxy-secret binary (auto-downloaded if missing).
 proxy_secret_path = "proxy-secret"

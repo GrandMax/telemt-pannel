@@ -12,6 +12,8 @@ import { useAuthStore } from "../stores/authStore";
 import { useMe } from "../api/auth";
 import Users from "./Users";
 import DashboardCharts from "../components/DashboardCharts";
+import Settings from "./Settings";
+import Trace from "./Trace";
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
   const { data: me } = useMe();
@@ -29,6 +31,16 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             <Link as={NavLink} to="/users" fontWeight="medium">
               Users
             </Link>
+            {me?.is_sudo && (
+              <Link as={NavLink} to="/settings" fontWeight="medium">
+                Settings
+              </Link>
+            )}
+            {me?.is_sudo && (
+              <Link as={NavLink} to="/trace" fontWeight="medium">
+                Trace
+              </Link>
+            )}
             <Spacer />
             {me && (
               <span style={{ color: "var(--chakra-colors-gray-600)" }}>
@@ -54,6 +66,8 @@ export default function DashboardLayout() {
       <Routes>
         <Route path="/" element={<DashboardHome />} />
         <Route path="/users" element={<Users />} />
+        <Route path="/settings" element={<Settings />} />
+        <Route path="/trace" element={<Trace />} />
       </Routes>
     </DashboardShell>
   );

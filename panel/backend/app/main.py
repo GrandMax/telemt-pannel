@@ -19,7 +19,7 @@ class SpaStaticFiles(StaticFiles):
 
 
 from app.database import engine, Base, SessionLocal
-from app.routers import admin, user, system
+from app.routers import admin, admin_trace, user, system
 from app.services.metrics_scraper import fetch_metrics, scrape_and_persist
 from app.services.user_service import get_active_users_for_config
 from app.services.config_writer import write_config
@@ -94,6 +94,7 @@ app.add_middleware(
 
 app.include_router(system.router)
 app.include_router(admin.router)
+app.include_router(admin_trace.router)
 app.include_router(user.router)
 
 if STATIC_DIR.is_dir():
